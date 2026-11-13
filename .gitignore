@@ -1,0 +1,21 @@
+# Datasets (large and may contain private data). See docs/dataset_sources.md to re-download.
+data/raw/*
+data/processed/*
+
+# Secrets and passwords
+.env
+*.key
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+venv/
+.venv/
+
+# Personal tool settings
+.claude/settings.local.json
+
+# OS junk files
+.DS_Store
+Thumbs.db
