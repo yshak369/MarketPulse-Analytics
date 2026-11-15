@@ -10,21 +10,30 @@ What this version does:
           "skipped", "order" or "other".
   Part 2. Extract the fields of each order: name, address, phone,
           PIN code, payment word and products.
-A later part will validate the orders and write the output files.
+  Part 3. Validate each order, flag anything unclear for manual
+          review, and write the output files.
+District and state are not filled yet. They will come from the PIN
+code list in a later step.
 
 How to run on the fake test chats (from the project folder):
-    python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt --aliases data/synthetic/synthetic_product_aliases.csv
+    python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt --aliases data/synthetic/synthetic_product_aliases.csv --output data/processed/whatsapp_test_output
 
 Add --details to list every message with its line number and group.
-The output shows counts and line numbers only, never message text,
-so it is safe to share.
+What is printed on screen shows counts and line numbers only, never
+message text, so it is safe to share. The output FILES hold the full
+orders and must stay private when the chats are real.
+
+Safety: the script refuses to write output inside the project folder,
+except under data/processed/, which Git ignores.
 """
 
 import argparse
 import csv
 import re
+import secrets
+from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # ---------------------------------------------------------------------
@@ -82,6 +91,21 @@ PRODUCT_PART = re.compile(
 DEFAULT_PRODUCT_CODE = "CXE"
 DEFAULT_PRODUCT_NOTE = "product_defaulted_to_cxe"
 
+# ---------------------------------------------------------------------
+# Validation settings. The owner can change these in one place.
+# ---------------------------------------------------------------------
+
+# A COD line amount outside this range is flagged as a likely typing mistake.
+MIN_LINE_AMOUNT = 50
+MAX_LINE_AMOUNT = 10000
+
+# The same phone and the same products within this many hours is a possible duplicate.
+DUPLICATE_WINDOW_HOURS = 24
+
+# Output may be written outside the project, or inside this one ignored folder.
+PROJECT_FOLDER = Path(__file__).resolve().parent.parent
+ALLOWED_OUTPUT_FOLDER = PROJECT_FOLDER / "data" / "processed"
+
 
 @dataclass
 class Message:
@@ -122,6 +146,10 @@ class Order:
     items: list
     notes: list = field(default_factory=list)
     raw_message: str = ""   # private: kept so the owner can check the parser's work
+    # Filled in by validate_orders:
+    order_id: str = ""      # new random ID
+    payment_type: str = ""  # "prepaid", "cod" or "needs_review"
+    flags: list = field(default_factory=list)   # reasons for manual review; empty if clean
 
 
 def read_messages(path, source_group):
@@ -393,47 +421,256 @@ def parse_chat(path, source_group, ignore_phones=frozenset()):
     return result
 
 
+def validate_order(order):
+    """Set the payment type of one order and list its review flags.
+
+    A flag means "a person must look at this". The parser never fixes
+    or guesses a value.
+    """
+    flags = []
+
+    # Payment type comes from the group. A payment word that disagrees
+    # with the group means a person must decide.
+    order.payment_type = order.source_group
+    if order.payment_word and order.payment_word != order.source_group:
+        order.payment_type = "needs_review"
+        flags.append("payment_conflict")
+
+    # Required fields.
+    if not order.name:
+        flags.append("missing_name")
+    if not order.address:
+        flags.append("missing_address")
+    if not order.phones:
+        flags.append("missing_phone")
+    if not order.pin_codes:
+        flags.append("missing_pin_code")
+    if len(order.pin_codes) > 1:
+        flags.append("multiple_pin_codes")   # the parser does not choose between them
+
+    # Products.
+    if any(item.quantity is None for item in order.items):
+        flags.append("unreadable_product")
+    if any(item.quantity is not None and item.product_code is None for item in order.items):
+        flags.append("unknown_product")
+    if any(item.quantity == 0 for item in order.items):
+        flags.append("bad_quantity")
+
+    # Amounts.
+    amounts = [item.amount for item in order.items if item.amount is not None]
+    if order.source_group == "cod" and len(amounts) < len(order.items):
+        flags.append("cod_amount_missing")
+    if order.source_group == "prepaid" and amounts:
+        flags.append("prepaid_with_amount")
+    if any(amount < MIN_LINE_AMOUNT or amount > MAX_LINE_AMOUNT for amount in amounts):
+        flags.append("amount_out_of_range")
+
+    order.flags = flags
+
+
+def flag_possible_duplicates(orders):
+    """Flag an order that repeats an earlier one within the time window.
+
+    "Repeats" means the same main phone and the same products and
+    quantities. The later order is flagged. Nothing is deleted.
+    """
+    window = timedelta(hours=DUPLICATE_WINDOW_HOURS)
+    last_seen = {}
+
+    for order in sorted(orders, key=lambda order: order.recorded_at):
+        if not order.phones:
+            continue   # without a phone we cannot tell who ordered
+        products = sorted((item.product_code or item.raw_name, item.quantity or 0) for item in order.items)
+        key = (order.phones[0], tuple(products))
+
+        earlier = last_seen.get(key)
+        if earlier is not None and order.recorded_at - earlier <= window:
+            order.flags.append("possible_duplicate")
+        last_seen[key] = order.recorded_at
+
+
+def validate_orders(orders):
+    """Validate all orders together and give each one a random ID."""
+    for order in orders:
+        validate_order(order)
+    flag_possible_duplicates(orders)
+
+    # Random IDs: never made from a phone number or a name.
+    used_ids = set()
+    for order in orders:
+        while not order.order_id or order.order_id in used_ids:
+            order.order_id = "W-" + secrets.token_hex(4)
+        used_ids.add(order.order_id)
+    return orders
+
+
+def order_amount_and_basis(order):
+    """Return the order amount and what kind of amount it is.
+
+    Only a COD order with an amount on every line has a known amount,
+    and that amount is what should be COLLECTED. It is not confirmed
+    revenue. Everything else is honestly "unknown".
+    """
+    amounts = [item.amount for item in order.items]
+    if order.payment_type == "cod" and all(amount is not None for amount in amounts):
+        return sum(amounts), "cod_collectible"
+    return None, "unknown"
+
+
+def format_amount(amount):
+    """Write 500.0 as "500", 99.5 as "99.5" and an unknown amount as empty."""
+    if amount is None:
+        return ""
+    return str(int(amount)) if amount == int(amount) else str(amount)
+
+
+def check_output_folder(folder):
+    """Refuse an output folder that Git could pick up.
+
+    Parser output holds customer details. It may be written outside the
+    project, or inside data/processed/ (ignored by Git), nowhere else.
+    """
+    folder = Path(folder).resolve()
+    inside_project = folder == PROJECT_FOLDER or PROJECT_FOLDER in folder.parents
+    inside_allowed = folder == ALLOWED_OUTPUT_FOLDER or ALLOWED_OUTPUT_FOLDER in folder.parents
+    if inside_project and not inside_allowed:
+        raise SystemExit(
+            f"Refusing to write output to {folder}.\n"
+            "Parser output can hold customer details, and this folder is tracked by Git.\n"
+            f"Use a private folder outside the project, or a folder under {ALLOWED_OUTPUT_FOLDER}."
+        )
+    return folder
+
+
+def write_csv(path, header, rows):
+    with open(path, "w", encoding="utf-8", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def write_outputs(orders, folder):
+    """Write the four output files. Returns the folder they were written to."""
+    folder = check_output_folder(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    order_rows = []
+    item_rows = []
+    review_rows = []
+    unknown_names = Counter()
+
+    for order in orders:
+        amount, basis = order_amount_and_basis(order)
+        flags = ";".join(order.flags)
+        order_rows.append([
+            order.order_id,
+            order.recorded_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "whatsapp",
+            order.source_group,
+            order.payment_type,
+            order.name,
+            order.phones[0] if order.phones else "",
+            order.address,
+            order.pin_codes[0] if len(order.pin_codes) == 1 else "",   # never chosen from several
+            "",   # district_city: filled from the PIN code list in a later step
+            "",   # state: filled from the PIN code list in a later step
+            format_amount(amount),
+            basis,
+            flags,
+            ";".join(order.notes),
+            order.line_number,
+        ])
+        for item in order.items:
+            item_rows.append([
+                order.order_id,
+                item.product_code or "",
+                item.raw_name,
+                "" if item.quantity is None else item.quantity,
+                format_amount(item.amount),
+                "true" if item.defaulted else "false",
+            ])
+            if item.product_code is None:
+                unknown_names[item.raw_name] += 1
+        if order.flags:
+            review_rows.append([order.order_id, order.source_group, order.line_number, flags, order.raw_message])
+
+    write_csv(folder / "whatsapp_orders.csv",
+              ["order_id", "order_datetime", "sales_channel", "source_group", "payment_type",
+               "customer_name", "phone", "address", "pin_code", "district_city", "state",
+               "order_amount", "amount_basis", "review_flags", "notes", "source_line"],
+              order_rows)
+    write_csv(folder / "whatsapp_order_items.csv",
+              ["order_id", "product_code", "raw_name", "quantity", "cod_collectible_amount", "product_defaulted"],
+              item_rows)
+    write_csv(folder / "whatsapp_review_queue.csv",
+              ["order_id", "source_group", "source_line", "review_flags", "raw_message"],
+              review_rows)
+    write_csv(folder / "whatsapp_unknown_products.csv",
+              ["raw_name", "count"],
+              unknown_names.most_common())
+    return folder
+
+
 def main():
     arguments = argparse.ArgumentParser(description="Parse exported WhatsApp order chats.")
     arguments.add_argument("--prepaid", help="exported chat file of the Prepaid group")
     arguments.add_argument("--cod", help="exported chat file of the COD group")
     arguments.add_argument("--ignore-phones", help="file with phone numbers to ignore, one per line")
     arguments.add_argument("--aliases", help="alias file: product spellings and their codes")
+    arguments.add_argument("--output", help="folder for the output files (needs --aliases)")
     arguments.add_argument("--details", action="store_true", help="list every message (no message text)")
     options = arguments.parse_args()
 
+    if options.output and not options.aliases:
+        raise SystemExit("--output needs --aliases, because products are read from the alias file.")
+    if options.output:
+        check_output_folder(options.output)   # fail early, before any work is done
+
     ignore_phones = read_ignore_phones(options.ignore_phones)
     aliases = read_aliases(options.aliases) if options.aliases else None
+    orders = []
 
     for source_group, path in (("prepaid", options.prepaid), ("cod", options.cod)):
         if path is None:
             continue
         messages = parse_chat(path, source_group, ignore_phones)
 
-        counts = {"order": 0, "other": 0, "skipped": 0}
-        for message in messages:
-            counts[message.category] += 1
-
+        counts = Counter(message.category for message in messages)
         print(f"{source_group}: {len(messages)} messages -> "
               f"{counts['order']} orders, {counts['other']} other, {counts['skipped']} skipped")
-
-        if aliases is not None:
-            orders = [
-                extract_order(message, aliases, ignore_phones)
-                for message in messages if message.category == "order"
-            ]
-            all_items = [item for order in orders for item in order.items]
-            print(f"  extracted: {len(all_items)} product lines, "
-                  f"{sum(1 for o in orders if DEFAULT_PRODUCT_NOTE in o.notes)} orders defaulted to 1 CXE, "
-                  f"{sum(1 for i in all_items if i.product_code is None)} unknown product names, "
-                  f"{sum(1 for o in orders if not o.phones)} without phone, "
-                  f"{sum(1 for o in orders if not o.pin_codes)} without PIN code")
 
         if options.details:
             for message in messages:
                 line_count = len(message.text.split("\n"))
                 copied = " (copied order)" if message.copied_time else ""
                 print(f"  line {message.line_number:>5}  {message.category:<8} {line_count} lines{copied}")
+
+        if aliases is not None:
+            orders += [
+                extract_order(message, aliases, ignore_phones)
+                for message in messages if message.category == "order"
+            ]
+
+    if aliases is None:
+        return
+
+    # Both groups are validated together, so a duplicate is found even
+    # when the two copies are in different groups.
+    validate_orders(orders)
+
+    flagged = [order for order in orders if order.flags]
+    all_items = [item for order in orders for item in order.items]
+    print(f"\norders: {len(orders)} -> {len(orders) - len(flagged)} clean, {len(flagged)} need review")
+    print(f"product lines: {len(all_items)}, "
+          f"orders defaulted to 1 CXE: {sum(1 for o in orders if DEFAULT_PRODUCT_NOTE in o.notes)}")
+    flag_counts = Counter(flag for order in orders for flag in order.flags)
+    for flag, count in sorted(flag_counts.items()):
+        print(f"  {flag}: {count}")
+    print("district and state: not filled yet (the PIN code list is added in a later step)")
+
+    if options.output:
+        folder = write_outputs(orders, options.output)
+        print(f"\nfour files written to {folder}")
 
 
 if __name__ == "__main__":

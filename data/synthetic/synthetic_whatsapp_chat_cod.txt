@@ -32,6 +32,13 @@ Bengaluru
 560001
 9000000105
 1 cxe(50000)
+03/03/2025, 20:00 - Synthetic Shop: Test Buyer One
+10 Sample Street
+Example Nagar
+Chennai
+600001
+9000000101
+1 CXE(500),1 LP(150)
 04/03/2025, 09:45 - Synthetic Shop: https://example.com/synthetic-tracking
 04/03/2025, 10:00 - Synthetic Shop: Test Buyer Six
 9 Test Colony

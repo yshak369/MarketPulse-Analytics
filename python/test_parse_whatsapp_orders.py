@@ -4,6 +4,8 @@ How to run (from the project folder):
     python -m unittest discover -s python -v
 """
 
+import csv
+import tempfile
 import unittest
 from collections import Counter
 from datetime import datetime
@@ -100,7 +102,7 @@ class ClassifyTest(unittest.TestCase):
 
     def test_cod_counts(self):
         _, counts = self.categories(COD_CHAT, "cod")
-        self.assertEqual(counts, {"order": 10, "skipped": 4, "other": 2})
+        self.assertEqual(counts, {"order": 11, "skipped": 4, "other": 2})
 
     def test_prepaid_orders_are_the_right_messages(self):
         messages, _ = self.categories(PREPAID_CHAT, "prepaid")
@@ -261,6 +263,187 @@ class ExtractOrderTest(unittest.TestCase):
         for order in self.orders.values():
             self.assertTrue(order.name)
             self.assertTrue(order.items)
+
+
+def parse_fake_chats():
+    """Parse, extract and validate both fake chats, as the script does."""
+    aliases = parser.read_aliases(SYNTHETIC / "synthetic_product_aliases.csv")
+    orders = []
+    for path, group in ((PREPAID_CHAT, "prepaid"), (COD_CHAT, "cod")):
+        for message in parser.parse_chat(path, group, IGNORE_PHONES):
+            if message.category == "order":
+                orders.append(parser.extract_order(message, aliases, IGNORE_PHONES))
+    return parser.validate_orders(orders)
+
+
+def make_order(phone, recorded_at, product_code="CXE", quantity=1, group="prepaid"):
+    """A small hand-made order for testing one rule at a time."""
+    item = parser.OrderItem(product_code.lower(), product_code, quantity, None)
+    return parser.Order(
+        source_group=group, line_number=1, recorded_at=recorded_at, name="Test Person",
+        address="1 Test Street", phones=[phone] if phone else [], pin_codes=["600001"],
+        payment_word=None, items=[item],
+    )
+
+
+class ValidateFakeChatsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.orders = parse_fake_chats()
+
+    def flags_by_group(self, group):
+        return [(o.name, o.flags) for o in self.orders if o.source_group == group]
+
+    def test_prepaid_flags(self):
+        self.assertEqual(self.flags_by_group("prepaid"), [
+            ("Test Customer One", []),
+            ("Test Customer Two", []),            # defaulted to 1 CXE: a note, not a flag
+            ("Test Customer Three", []),
+            ("Test Customer Four", []),
+            ("Test Customer Five", []),
+            ("Test Customer Six", []),
+            ("Test Customer Seven", []),
+            ("Test Customer Eight", ["unknown_product"]),
+            ("Test Customer Nine", ["missing_phone"]),
+            ("Test Customer Ten", ["prepaid_with_amount"]),
+            ("Test Customer One", []),            # same order two days later: outside 24 hours
+            ("Test Customer Eleven", ["payment_conflict"]),
+            ("Test Customer Twelve", []),
+            ("TEST CUSTOMER THIRTEEN", []),
+        ])
+
+    def test_cod_flags(self):
+        self.assertEqual(self.flags_by_group("cod"), [
+            ("Test Buyer One", []),
+            ("Test Buyer Two", ["cod_amount_missing"]),     # no product line, so no amount
+            ("Test Buyer Three", ["cod_amount_missing"]),   # product line without an amount
+            ("Test Buyer Four", ["amount_out_of_range"]),   # Rs 5
+            ("Test Buyer Five", ["amount_out_of_range"]),   # Rs 50,000
+            ("Test Buyer One", ["possible_duplicate"]),     # same order six hours later
+            ("Test Buyer Six", []),
+            ("Test Buyer Seven", ["payment_conflict"]),
+            ("Test Buyer Eight", ["multiple_pin_codes"]),
+            ("Test Buyer Nine", ["bad_quantity"]),
+            ("Test Buyer Ten", []),
+        ])
+
+    def test_payment_type(self):
+        types = {(o.source_group, o.name): o.payment_type for o in self.orders}
+        self.assertEqual(types[("prepaid", "Test Customer Two")], "prepaid")
+        self.assertEqual(types[("cod", "Test Buyer Six")], "cod")
+        self.assertEqual(types[("prepaid", "Test Customer Eleven")], "needs_review")
+        self.assertEqual(types[("cod", "Test Buyer Seven")], "needs_review")
+
+    def test_order_ids_are_unique(self):
+        ids = [o.order_id for o in self.orders]
+        self.assertEqual(len(set(ids)), len(ids))
+        self.assertTrue(all(i.startswith("W-") for i in ids))
+
+    def test_amount_is_known_only_for_complete_cod_orders(self):
+        amounts = {}
+        for order in self.orders:
+            amounts.setdefault((order.source_group, order.name), parser.order_amount_and_basis(order))
+        self.assertEqual(amounts[("cod", "Test Buyer One")], (650.0, "cod_collectible"))
+        self.assertEqual(amounts[("cod", "Test Buyer Six")], (1300.0, "cod_collectible"))
+        self.assertEqual(amounts[("cod", "Test Buyer Two")], (None, "unknown"))       # amount missing
+        self.assertEqual(amounts[("cod", "Test Buyer Seven")], (None, "unknown"))     # needs review
+        self.assertEqual(amounts[("prepaid", "Test Customer One")], (None, "unknown"))
+        self.assertEqual(amounts[("prepaid", "Test Customer Ten")], (None, "unknown"))
+
+
+class DuplicateRuleTest(unittest.TestCase):
+    def flags(self, *orders):
+        parser.validate_orders(list(orders))
+        return [o.flags for o in orders]
+
+    def test_same_order_within_24_hours_is_flagged(self):
+        first = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        second = make_order("9000000201", datetime(2025, 3, 4, 10, 0))   # exactly 24 hours later
+        self.assertEqual(self.flags(first, second), [[], ["possible_duplicate"]])
+
+    def test_same_order_after_24_hours_is_not_flagged(self):
+        first = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        second = make_order("9000000201", datetime(2025, 3, 4, 10, 1))
+        self.assertEqual(self.flags(first, second), [[], []])
+
+    def test_different_products_or_phone_are_not_duplicates(self):
+        first = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        other_product = make_order("9000000201", datetime(2025, 3, 3, 11, 0), product_code="LP")
+        other_quantity = make_order("9000000201", datetime(2025, 3, 3, 12, 0), quantity=2)
+        other_phone = make_order("9000000202", datetime(2025, 3, 3, 13, 0))
+        self.assertEqual(self.flags(first, other_product, other_quantity, other_phone), [[], [], [], []])
+
+    def test_duplicate_across_the_two_groups_is_found(self):
+        prepaid = make_order("9000000201", datetime(2025, 3, 3, 10, 0), group="prepaid")
+        cod = make_order("9000000201", datetime(2025, 3, 3, 12, 0), group="cod")
+        self.assertIn("possible_duplicate", self.flags(prepaid, cod)[1])
+
+    def test_orders_without_phone_are_never_called_duplicates(self):
+        first = make_order(None, datetime(2025, 3, 3, 10, 0))
+        second = make_order(None, datetime(2025, 3, 3, 11, 0))
+        self.assertEqual(self.flags(first, second), [["missing_phone"], ["missing_phone"]])
+
+
+class OutputFolderGuardTest(unittest.TestCase):
+    def test_folders_tracked_by_git_are_refused(self):
+        for folder in (parser.PROJECT_FOLDER, parser.PROJECT_FOLDER / "python",
+                       parser.PROJECT_FOLDER / "data" / "synthetic", parser.PROJECT_FOLDER / "data"):
+            with self.assertRaises(SystemExit):
+                parser.check_output_folder(folder)
+
+    def test_ignored_folder_and_outside_folders_are_allowed(self):
+        allowed = parser.PROJECT_FOLDER / "data" / "processed" / "anything"
+        self.assertEqual(parser.check_output_folder(allowed), allowed.resolve())
+        with tempfile.TemporaryDirectory() as outside:
+            self.assertEqual(parser.check_output_folder(outside), Path(outside).resolve())
+
+
+class WriteOutputsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.folder = tempfile.TemporaryDirectory()
+        parser.write_outputs(parse_fake_chats(), cls.folder.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.folder.cleanup()
+
+    def rows(self, name):
+        with open(Path(self.folder.name) / name, encoding="utf-8", newline="") as csv_file:
+            return list(csv.DictReader(csv_file))
+
+    def test_row_counts(self):
+        self.assertEqual(len(self.rows("whatsapp_orders.csv")), 25)
+        self.assertEqual(len(self.rows("whatsapp_order_items.csv")), 35)
+        self.assertEqual(len(self.rows("whatsapp_review_queue.csv")), 12)
+        self.assertEqual(self.rows("whatsapp_unknown_products.csv"), [{"raw_name": "mystery cream", "count": "1"}])
+
+    def test_every_item_points_to_an_order(self):
+        order_ids = {row["order_id"] for row in self.rows("whatsapp_orders.csv")}
+        self.assertTrue(all(row["order_id"] in order_ids for row in self.rows("whatsapp_order_items.csv")))
+
+    def test_amount_and_basis_always_agree(self):
+        for row in self.rows("whatsapp_orders.csv"):
+            self.assertEqual(row["amount_basis"] == "unknown", row["order_amount"] == "")
+
+    def test_clean_cod_order_row(self):
+        row = [r for r in self.rows("whatsapp_orders.csv")
+               if r["customer_name"] == "Test Buyer Six"][0]
+        self.assertEqual(row["order_datetime"], "2025-03-04 10:00:00")
+        self.assertEqual((row["sales_channel"], row["payment_type"]), ("whatsapp", "cod"))
+        self.assertEqual((row["phone"], row["pin_code"]), ("9000000106", "500001"))
+        self.assertEqual((row["order_amount"], row["amount_basis"]), ("1300", "cod_collectible"))
+        self.assertEqual((row["review_flags"], row["district_city"], row["state"]), ("", "", ""))
+
+    def test_pin_code_is_empty_when_there_are_two(self):
+        row = [r for r in self.rows("whatsapp_orders.csv")
+               if r["customer_name"] == "Test Buyer Eight"][0]
+        self.assertEqual((row["pin_code"], row["review_flags"]), ("", "multiple_pin_codes"))
+
+    def test_review_queue_keeps_the_raw_message(self):
+        row = [r for r in self.rows("whatsapp_review_queue.csv")
+               if r["review_flags"] == "unknown_product"][0]
+        self.assertIn("1 cxe,1 mystery cream", row["raw_message"])
 
 
 if __name__ == "__main__":
