@@ -130,5 +130,138 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(advert.category, "order")
 
 
+class ReadProductLineTest(unittest.TestCase):
+    ALIASES = parser.read_aliases(SYNTHETIC / "synthetic_product_aliases.csv")
+
+    def read(self, line):
+        items = parser.read_product_line(line, self.ALIASES)
+        if items is None:
+            return None
+        return [(i.product_code, i.quantity, i.amount) for i in items]
+
+    def test_prepaid_line_with_habit_suffix(self):
+        self.assertEqual(self.read("1 cxe/-, 1 LP"), [("CXE", 1, None), ("LP", 1, None)])
+
+    def test_cod_line_with_amounts(self):
+        self.assertEqual(self.read("1 CXE(500),1 LP(150)"), [("CXE", 1, 500.0), ("LP", 1, 150.0)])
+
+    def test_no_space_and_letter_case(self):
+        self.assertEqual(self.read("1BL, 2 Serum"), [("BL", 1, None), ("SERUM", 2, None)])
+
+    def test_unknown_name_is_kept_but_not_matched(self):
+        items = parser.read_product_line("1 cxe,1 mystery cream", self.ALIASES)
+        self.assertEqual(items[1].product_code, None)
+        self.assertEqual(items[1].raw_name, "mystery cream")
+
+    def test_unreadable_part_is_kept_for_review(self):
+        items = parser.read_product_line("1 cxe, free gift", self.ALIASES)
+        self.assertEqual((items[1].raw_name, items[1].product_code, items[1].quantity),
+                         ("free gift", None, None))
+
+    def test_address_lines_are_not_product_lines(self):
+        self.assertIsNone(self.read("Sample Taluk"))
+        self.assertIsNone(self.read("625001"))
+        self.assertIsNone(self.read("12 Example Town 682001"))
+
+
+class ExtractOrderTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        aliases = parser.read_aliases(SYNTHETIC / "synthetic_product_aliases.csv")
+        cls.orders = {}
+        for path, group in ((PREPAID_CHAT, "prepaid"), (COD_CHAT, "cod")):
+            for message in parser.parse_chat(path, group, IGNORE_PHONES):
+                if message.category == "order":
+                    order = parser.extract_order(message, aliases, IGNORE_PHONES)
+                    # "Test Customer One" appears twice; keep the first one.
+                    cls.orders.setdefault(order.name, order)
+
+    def items(self, name):
+        return [(i.product_code, i.quantity, i.amount) for i in self.orders[name].items]
+
+    def test_usual_layout(self):
+        order = self.orders["Test Customer One"]
+        self.assertEqual(order.phones, ["9000000001"])
+        self.assertEqual(order.pin_codes, ["625001"])
+        self.assertEqual(order.address, "12 Sample Street, Example Nagar, Sample Taluk, Madurai")
+        self.assertEqual(self.items("Test Customer One"), [("CXE", 1, None), ("LP", 1, None)])
+        self.assertEqual(order.notes, [])
+        self.assertEqual(order.recorded_at, datetime(2025, 3, 3, 10, 15))
+
+    def test_no_product_line_defaults_to_one_cream(self):
+        order = self.orders["Test Customer Two"]
+        self.assertEqual(self.items("Test Customer Two"), [("CXE", 1, None)])
+        self.assertTrue(order.items[0].defaulted)
+        self.assertIn("product_defaulted_to_cxe", order.notes)
+        self.assertEqual(order.address, "4/21 Example Road, Sampleville, Chennai")
+
+    def test_phone_above_pin_and_second_phone(self):
+        order = self.orders["Test Customer Three"]
+        self.assertEqual(order.phones, ["9000000003", "9000000004"])
+        self.assertEqual(order.pin_codes, ["641001"])
+        self.assertEqual(order.address, "7 Example Road, Near Sample Temple, Coimbatore")
+        self.assertIn("second_phone=9000000004", order.notes)
+
+    def test_labels_are_removed(self):
+        order = self.orders["Test Customer Four"]
+        self.assertEqual(order.phones, ["9000000005"])
+        self.assertEqual(order.pin_codes, ["682001"])
+        self.assertEqual(order.address, "3 Test Lane, Example Town, Sample District, Kochi 682001")
+
+    def test_edited_mark_is_removed(self):
+        self.assertEqual(self.items("Test Customer Five"), [("CXE", 2, None)])
+
+    def test_copied_orders(self):
+        six, seven = self.orders["Test Customer Six"], self.orders["Test Customer Seven"]
+        self.assertIn("copied_order_time=04/03, 22:36", six.notes)
+        self.assertTrue(six.items[0].defaulted)
+        self.assertEqual(six.pin_codes, ["695001"])
+        self.assertEqual(self.items("Test Customer Seven"), [("CXE", 1, None)])
+        self.assertFalse(seven.items[0].defaulted)
+
+    def test_unknown_product_has_no_code(self):
+        self.assertEqual(self.items("Test Customer Eight"), [("CXE", 1, None), (None, 1, None)])
+
+    def test_missing_phone_stays_missing(self):
+        order = self.orders["Test Customer Nine"]
+        self.assertEqual(order.phones, [])
+        self.assertEqual(order.pin_codes, ["600001"])
+        self.assertEqual(self.items("Test Customer Nine"), [("SERUM", 1, None)])
+
+    def test_payment_word_is_found(self):
+        order = self.orders["Test Customer Eleven"]
+        self.assertEqual(order.payment_word, "cod")
+        self.assertEqual(order.address, "31 Example Market Road, Kochi")
+        self.assertEqual(self.orders["Test Buyer Seven"].payment_word, "prepaid")
+        self.assertEqual(self.items("Test Buyer Seven"), [("CXE", 1, 500.0)])
+
+    def test_capitals_dot_leading_zero_and_state_line(self):
+        order = self.orders["TEST CUSTOMER THIRTEEN"]
+        self.assertEqual(order.phones, ["9000000013"])
+        self.assertEqual(order.address, "14 EXAMPLE STREET, SAMPLE POST, HYDERABAD, Telangana")
+        self.assertEqual(self.items("TEST CUSTOMER THIRTEEN"), [("SS", 1, None), ("BL", 2, None)])
+
+    def test_cod_amounts(self):
+        self.assertEqual(self.items("Test Buyer One"), [("CXE", 1, 500.0), ("LP", 1, 150.0)])
+        self.assertEqual(self.items("Test Buyer Six"), [("CXE", 2, 1000.0), ("FW", 1, 300.0)])
+        self.assertEqual(self.items("Test Buyer Ten"),
+                         [("KOJIGLOW", 1, 350.0), ("BL", 1, 400.0), ("SS", 1, 450.0)])
+
+    def test_cod_without_product_line_has_no_amount(self):
+        self.assertEqual(self.items("Test Buyer Two"), [("CXE", 1, None)])
+
+    def test_two_pin_codes_are_both_kept(self):
+        self.assertEqual(self.orders["Test Buyer Eight"].pin_codes, ["600001", "625001"])
+
+    def test_bad_quantity_is_kept_as_written(self):
+        self.assertEqual(self.items("Test Buyer Nine"), [("CXE", 0, 500.0)])
+
+    def test_every_order_has_a_name_and_items(self):
+        self.assertEqual(len(self.orders), 23)
+        for order in self.orders.values():
+            self.assertTrue(order.name)
+            self.assertTrue(order.items)
+
+
 if __name__ == "__main__":
     unittest.main()

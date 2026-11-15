@@ -5,21 +5,25 @@ Design: docs/whatsapp_parser_plan.md (version 2).
 This script runs only on the owner's computer. It uses plain Python.
 It never sends data anywhere.
 
-PART 1 (this version) does two jobs:
-  1. Split a chat file into messages.
-  2. Sort each message into "skipped", "order" or "other".
-Later parts will extract the fields and validate them.
+What this version does:
+  Part 1. Split a chat file into messages, and sort each message into
+          "skipped", "order" or "other".
+  Part 2. Extract the fields of each order: name, address, phone,
+          PIN code, payment word and products.
+A later part will validate the orders and write the output files.
 
 How to run on the fake test chats (from the project folder):
-    python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt
+    python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt --aliases data/synthetic/synthetic_product_aliases.csv
 
 Add --details to list every message with its line number and group.
-The details show no message text, so they are safe to share.
+The output shows counts and line numbers only, never message text,
+so it is safe to share.
 """
 
 import argparse
+import csv
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -62,6 +66,22 @@ PIN_CODE = re.compile(r"^[1-9]\d{5}$")
 # Invisible marks WhatsApp sometimes adds to exported lines.
 INVISIBLE_MARKS = "‎‏‪‬﻿"
 
+# Text WhatsApp adds to the end of an edited message.
+EDITED_MARK = "<This message was edited>"
+
+# A line that only says how the order is paid.
+PAYMENT_WORD = re.compile(r"^(cod|prepaid)$", re.IGNORECASE)
+
+# One product: a quantity, a name, and for COD an amount in brackets.
+# Examples: "1 cxe", "2 cxe(1000)", "1BL", "1 Serum ( 600 )"
+PRODUCT_PART = re.compile(
+    r"^(\d+)\s*([A-Za-z][A-Za-z0-9 +.&]*?)\s*(?:\(\s*(\d+(?:\.\d+)?)\s*\))?$"
+)
+
+# Owner's business rule: an order with no product line is 1 cream.
+DEFAULT_PRODUCT_CODE = "CXE"
+DEFAULT_PRODUCT_NOTE = "product_defaulted_to_cxe"
+
 
 @dataclass
 class Message:
@@ -74,6 +94,34 @@ class Message:
     text: str                # the message text, possibly several lines
     copied_time: str | None = None  # for a copied order: its inner "day/month, time"
     category: str = ""       # "skipped", "order" or "other"
+
+
+@dataclass
+class OrderItem:
+    """One product in an order."""
+
+    raw_name: str               # the name as written, in lower case
+    product_code: str | None    # None when the name is not in the alias file
+    quantity: int | None        # None when the part could not be read
+    amount: float | None        # COD amount for the line; None when not written
+    defaulted: bool = False     # True when the order had no product line
+
+
+@dataclass
+class Order:
+    """The fields extracted from one order message. Nothing is validated yet."""
+
+    source_group: str
+    line_number: int
+    recorded_at: datetime
+    name: str
+    address: str
+    phones: list            # every phone found, in order; the first is the main one
+    pin_codes: list         # every PIN code found; more than one is flagged later
+    payment_word: str | None   # "cod", "prepaid" or None
+    items: list
+    notes: list = field(default_factory=list)
+    raw_message: str = ""   # private: kept so the owner can check the parser's work
 
 
 def read_messages(path, source_group):
@@ -202,6 +250,131 @@ def classify(message, ignore_phones=frozenset()):
     return "other"
 
 
+def read_aliases(path):
+    """Read the alias file: every way a product is written -> its product code.
+
+    The file has the columns alias, source, product_code.
+    """
+    aliases = {}
+    with open(path, encoding="utf-8-sig", newline="") as alias_file:
+        for row in csv.DictReader(alias_file):
+            aliases[normalise_product_name(row["alias"])] = row["product_code"].strip().upper()
+    return aliases
+
+
+def normalise_product_name(name):
+    """Lower case, with single spaces, so "Body  Lotion" equals "body lotion"."""
+    return " ".join(name.lower().split())
+
+
+def is_only_numbers(line):
+    """True when a line holds nothing but phone numbers or PIN codes."""
+    without_numbers = NUMBER_RUN.sub("", remove_label(line))
+    return not re.search(r"[A-Za-z0-9]", without_numbers)
+
+
+def read_product_line(line, aliases):
+    """Read a product line such as "1 cxe/-, 2 LP(300)".
+
+    Returns a list of OrderItem, or None when the line is not a product line.
+    """
+    parts = [part.strip() for part in line.replace("/-", "").split(",") if part.strip()]
+    if not parts or not PRODUCT_PART.match(parts[0]):
+        return None
+
+    # An address line can also start with a number ("12 Sample Street 600001").
+    # A product line never contains a phone number or a PIN code.
+    outside_brackets = re.sub(r"\([^)]*\)", "", line)
+    phones, pin_codes = find_phones_and_pin_codes(outside_brackets)
+    if phones or pin_codes:
+        return None
+
+    items = []
+    for part in parts:
+        match = PRODUCT_PART.match(part)
+        if not match:
+            # Part of the line cannot be read. Keep it so it is flagged, not lost.
+            items.append(OrderItem(normalise_product_name(part), None, None, None))
+            continue
+        quantity, name, amount = match.groups()
+        raw_name = normalise_product_name(name)
+        items.append(
+            OrderItem(
+                raw_name=raw_name,
+                product_code=aliases.get(raw_name),   # None when unknown: never guessed
+                quantity=int(quantity),
+                amount=float(amount) if amount is not None else None,
+            )
+        )
+    return items
+
+
+def extract_order(message, aliases, ignore_phones=frozenset()):
+    """Pull the fields out of one order message.
+
+    Fields are found by pattern. Nothing is guessed: a field that is
+    not found stays empty, and the next part of the parser flags it.
+    """
+    # Clean-up: remove the edited mark, extra spaces and empty lines.
+    lines = [line.replace(EDITED_MARK, "").strip() for line in message.text.split("\n")]
+    lines = [line for line in lines if line]
+
+    # A line that only says "Cod" or "Prepaid".
+    payment_word = None
+    remaining = []
+    for line in lines:
+        if PAYMENT_WORD.match(remove_label(line)):
+            payment_word = line.lower()
+        else:
+            remaining.append(line)
+
+    # Product lines sit at the end of the message. Read upwards from the
+    # last line until a line is not a product line.
+    items = []
+    while len(remaining) > 1:
+        line_items = read_product_line(remaining[-1], aliases)
+        if line_items is None:
+            break
+        items = line_items + items
+        remaining.pop()
+
+    notes = []
+    if not items:
+        # Owner's business rule, not a guess: no product line means 1 cream.
+        items = [OrderItem(DEFAULT_PRODUCT_CODE.lower(), DEFAULT_PRODUCT_CODE, 1, None, defaulted=True)]
+        notes.append(DEFAULT_PRODUCT_NOTE)
+
+    # Phones and PIN codes, wherever they are in the remaining lines.
+    phones, pin_codes = find_phones_and_pin_codes("\n".join(remaining), ignore_phones)
+    if len(phones) > 1:
+        notes.append("second_phone=" + ",".join(phones[1:]))
+    if message.copied_time:
+        notes.append("copied_order_time=" + message.copied_time)
+
+    # The first line is the name. The rest is the address, without the
+    # lines that hold only a phone number or a PIN code.
+    name = " ".join(remove_label(remaining[0]).split()).rstrip(".").strip() if remaining else ""
+    address_lines = [
+        " ".join(remove_label(line).split())
+        for line in remaining[1:]
+        if not is_only_numbers(line)
+    ]
+
+    return Order(
+        source_group=message.source_group,
+        line_number=message.line_number,
+        recorded_at=message.recorded_at,
+        name=name,
+        address=", ".join(address_lines),
+        phones=phones,
+        pin_codes=pin_codes,
+        payment_word=payment_word,
+        items=items,
+        notes=notes,
+        raw_message=message.text,
+    )
+
+
 def read_ignore_phones(path):
     """Read the owner's list of phone numbers to ignore, one per line."""
     if path is None:
@@ -225,10 +398,12 @@ def main():
     arguments.add_argument("--prepaid", help="exported chat file of the Prepaid group")
     arguments.add_argument("--cod", help="exported chat file of the COD group")
     arguments.add_argument("--ignore-phones", help="file with phone numbers to ignore, one per line")
+    arguments.add_argument("--aliases", help="alias file: product spellings and their codes")
     arguments.add_argument("--details", action="store_true", help="list every message (no message text)")
     options = arguments.parse_args()
 
     ignore_phones = read_ignore_phones(options.ignore_phones)
+    aliases = read_aliases(options.aliases) if options.aliases else None
 
     for source_group, path in (("prepaid", options.prepaid), ("cod", options.cod)):
         if path is None:
@@ -241,6 +416,18 @@ def main():
 
         print(f"{source_group}: {len(messages)} messages -> "
               f"{counts['order']} orders, {counts['other']} other, {counts['skipped']} skipped")
+
+        if aliases is not None:
+            orders = [
+                extract_order(message, aliases, ignore_phones)
+                for message in messages if message.category == "order"
+            ]
+            all_items = [item for order in orders for item in order.items]
+            print(f"  extracted: {len(all_items)} product lines, "
+                  f"{sum(1 for o in orders if DEFAULT_PRODUCT_NOTE in o.notes)} orders defaulted to 1 CXE, "
+                  f"{sum(1 for i in all_items if i.product_code is None)} unknown product names, "
+                  f"{sum(1 for o in orders if not o.phones)} without phone, "
+                  f"{sum(1 for o in orders if not o.pin_codes)} without PIN code")
 
         if options.details:
             for message in messages:
