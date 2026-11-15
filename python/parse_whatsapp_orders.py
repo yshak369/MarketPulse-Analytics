@@ -12,11 +12,14 @@ What this version does:
           PIN code, payment word and products.
   Part 3. Validate each order, flag anything unclear for manual
           review, and write the output files.
-District and state are not filled yet. They will come from the PIN
-code list in a later step.
+  Part 4. Fill in district and state from the PIN code, using a PIN
+          code list (columns: pin_code, district, state).
 
 How to run on the fake test chats (from the project folder):
-    python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt --aliases data/synthetic/synthetic_product_aliases.csv --output data/processed/whatsapp_test_output
+    python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt --aliases data/synthetic/synthetic_product_aliases.csv --pin-codes data/synthetic/synthetic_pin_code_sample.csv --output data/processed/whatsapp_test_output
+
+The PIN code file used above is a small hand-written sample for tests.
+It is not the official India Post list.
 
 Add --details to list every message with its line number and group.
 What is printed on screen shows counts and line numbers only, never
@@ -150,6 +153,8 @@ class Order:
     order_id: str = ""      # new random ID
     payment_type: str = ""  # "prepaid", "cod" or "needs_review"
     flags: list = field(default_factory=list)   # reasons for manual review; empty if clean
+    district_city: str = ""   # looked up from the PIN code, never read from the address
+    state: str = ""           # looked up from the PIN code
 
 
 def read_messages(path, source_group):
@@ -489,10 +494,54 @@ def flag_possible_duplicates(orders):
         last_seen[key] = order.recorded_at
 
 
-def validate_orders(orders):
-    """Validate all orders together and give each one a random ID."""
+def read_pin_codes(path):
+    """Read the PIN code list: pin_code -> (district, state).
+
+    The file has the columns pin_code, district, state.
+    If one PIN code appears with two different districts or states,
+    it is stored as None, which means "ambiguous: do not choose".
+    """
+    pin_codes = {}
+    with open(path, encoding="utf-8-sig", newline="") as pin_file:
+        for row in csv.DictReader(pin_file):
+            pin_code = row["pin_code"].strip()
+            place = (row["district"].strip(), row["state"].strip())
+            if pin_code in pin_codes and pin_codes[pin_code] != place:
+                pin_codes[pin_code] = None
+            else:
+                pin_codes[pin_code] = place
+    return pin_codes
+
+
+def fill_district_and_state(orders, pin_codes):
+    """Fill district and state from the PIN code list.
+
+    Only an order with exactly one PIN code is looked up. A PIN code
+    that is not in the list, or that maps to more than one place, is
+    flagged and the fields stay empty.
+    """
+    for order in orders:
+        if len(order.pin_codes) != 1:
+            continue   # missing or several PIN codes: already flagged
+        pin_code = order.pin_codes[0]
+        if pin_code not in pin_codes:
+            order.flags.append("pin_code_not_found")
+        elif pin_codes[pin_code] is None:
+            order.flags.append("pin_code_ambiguous")
+        else:
+            order.district_city, order.state = pin_codes[pin_code]
+
+
+def validate_orders(orders, pin_codes=None):
+    """Validate all orders together and give each one a random ID.
+
+    pin_codes is the PIN code list from read_pin_codes. Without it,
+    district and state stay empty and no PIN code is looked up.
+    """
     for order in orders:
         validate_order(order)
+    if pin_codes is not None:
+        fill_district_and_state(orders, pin_codes)
     flag_possible_duplicates(orders)
 
     # Random IDs: never made from a phone number or a name.
@@ -572,8 +621,8 @@ def write_outputs(orders, folder):
             order.phones[0] if order.phones else "",
             order.address,
             order.pin_codes[0] if len(order.pin_codes) == 1 else "",   # never chosen from several
-            "",   # district_city: filled from the PIN code list in a later step
-            "",   # state: filled from the PIN code list in a later step
+            order.district_city,
+            order.state,
             format_amount(amount),
             basis,
             flags,
@@ -617,6 +666,7 @@ def main():
     arguments.add_argument("--cod", help="exported chat file of the COD group")
     arguments.add_argument("--ignore-phones", help="file with phone numbers to ignore, one per line")
     arguments.add_argument("--aliases", help="alias file: product spellings and their codes")
+    arguments.add_argument("--pin-codes", help="PIN code list with the columns pin_code, district, state")
     arguments.add_argument("--output", help="folder for the output files (needs --aliases)")
     arguments.add_argument("--details", action="store_true", help="list every message (no message text)")
     options = arguments.parse_args()
@@ -656,7 +706,8 @@ def main():
 
     # Both groups are validated together, so a duplicate is found even
     # when the two copies are in different groups.
-    validate_orders(orders)
+    pin_codes = read_pin_codes(options.pin_codes) if options.pin_codes else None
+    validate_orders(orders, pin_codes)
 
     flagged = [order for order in orders if order.flags]
     all_items = [item for order in orders for item in order.items]
@@ -666,7 +717,10 @@ def main():
     flag_counts = Counter(flag for order in orders for flag in order.flags)
     for flag, count in sorted(flag_counts.items()):
         print(f"  {flag}: {count}")
-    print("district and state: not filled yet (the PIN code list is added in a later step)")
+    if pin_codes is None:
+        print("district and state: not filled (no --pin-codes file was given)")
+    else:
+        print(f"district and state: filled for {sum(1 for o in orders if o.district_city)} of {len(orders)} orders")
 
     if options.output:
         folder = write_outputs(orders, options.output)

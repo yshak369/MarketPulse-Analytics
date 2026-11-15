@@ -63,12 +63,14 @@ This dataset is not for analysis by itself. It is a lookup list: the WhatsApp pa
 | Publisher | Department of Posts, Government of India, on the Open Government Data Platform India |
 | Contents (from third-party descriptions) | One row per post office, about 157,000 rows. Columns include circle, region, division, office name, PIN code, office type, delivery, district and state. Updated monthly |
 | Licence name | **Verified by the owner in a browser on 15 November 2026.** The data.gov.in page footer states that content is "licensed under the Government Open Data License-India" (GODL-India) |
-| Licence terms | **Not verified.** The licence text at https://www.data.gov.in/Godl has not been read yet. Third-party pages say it allows any use if credit is given |
+| Licence terms | **Partly verified by the owner on 15 November 2026**, from the licence text at https://www.data.gov.in/Godl: commercial use is allowed, subject to the licence conditions. The exact credit line required has not been recorded yet |
 | Fits modules | Sales, Customer, Payment and Shipping (all location analysis) |
 | Limits | One PIN code can cover several post offices, so the list must be reduced to one row per PIN code. The official pages refuse automated reading, so the file must be downloaded by hand |
 | Status | Candidate. Not downloaded. |
 
-**To do before use:** read the licence text, then record here whether commercial use is allowed and the exact credit line required.
+**To do before use:** record here the exact credit line that the licence requires.
+
+A small hand-written sample, `data/synthetic/synthetic_pin_code_sample.csv`, is used to test the parser. It holds about ten well-known city PIN codes and is not taken from the official file.
 
 ## Main finding
 

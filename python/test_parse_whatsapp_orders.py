@@ -265,7 +265,7 @@ class ExtractOrderTest(unittest.TestCase):
             self.assertTrue(order.items)
 
 
-def parse_fake_chats():
+def parse_fake_chats(pin_codes=None):
     """Parse, extract and validate both fake chats, as the script does."""
     aliases = parser.read_aliases(SYNTHETIC / "synthetic_product_aliases.csv")
     orders = []
@@ -273,7 +273,58 @@ def parse_fake_chats():
         for message in parser.parse_chat(path, group, IGNORE_PHONES):
             if message.category == "order":
                 orders.append(parser.extract_order(message, aliases, IGNORE_PHONES))
-    return parser.validate_orders(orders)
+    return parser.validate_orders(orders, pin_codes)
+
+
+class PinCodeLookupTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.pin_codes = parser.read_pin_codes(SYNTHETIC / "synthetic_pin_code_sample.csv")
+        cls.orders = {}
+        for order in parse_fake_chats(cls.pin_codes):
+            cls.orders.setdefault(order.name, order)
+
+    def place(self, name):
+        order = self.orders[name]
+        return order.district_city, order.state
+
+    def test_sample_list_is_read(self):
+        self.assertEqual(len(self.pin_codes), 10)
+        self.assertEqual(self.pin_codes["600001"], ("Chennai", "Tamil Nadu"))
+
+    def test_district_and_state_are_filled(self):
+        self.assertEqual(self.place("Test Customer One"), ("Madurai", "Tamil Nadu"))
+        self.assertEqual(self.place("Test Customer Four"), ("Ernakulam", "Kerala"))   # PIN inside the address line
+        self.assertEqual(self.place("Test Buyer Six"), ("Hyderabad", "Telangana"))
+        self.assertEqual(self.orders["Test Customer One"].flags, [])
+
+    def test_unknown_pin_code_is_flagged_and_left_empty(self):
+        self.assertEqual(self.place("Test Customer Twelve"), ("", ""))
+        self.assertEqual(self.orders["Test Customer Twelve"].flags, ["pin_code_not_found"])
+
+    def test_two_pin_codes_are_not_looked_up(self):
+        self.assertEqual(self.place("Test Buyer Eight"), ("", ""))
+        self.assertEqual(self.orders["Test Buyer Eight"].flags, ["multiple_pin_codes"])
+
+    def test_pin_code_with_two_places_is_ambiguous(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "pins.csv"
+            path.write_text("pin_code,district,state\n600001,Chennai,Tamil Nadu\n"
+                            "600001,Chennai,Tamil Nadu\n625001,Madurai,Tamil Nadu\n"
+                            "625001,Somewhere Else,Tamil Nadu\n", encoding="utf-8")
+            pin_codes = parser.read_pin_codes(path)
+        self.assertEqual(pin_codes["600001"], ("Chennai", "Tamil Nadu"))   # same place twice is fine
+        self.assertIsNone(pin_codes["625001"])
+
+        order = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        order.pin_codes = ["625001"]
+        parser.validate_orders([order], pin_codes)
+        self.assertEqual((order.district_city, order.flags), ("", ["pin_code_ambiguous"]))
+
+    def test_without_a_list_nothing_is_filled_or_flagged(self):
+        orders = {o.name: o for o in parse_fake_chats()}
+        self.assertEqual(orders["Test Customer Twelve"].flags, [])
+        self.assertEqual(orders["Test Buyer Six"].district_city, "")
 
 
 def make_order(phone, recorded_at, product_code="CXE", quantity=1, group="prepaid"):
