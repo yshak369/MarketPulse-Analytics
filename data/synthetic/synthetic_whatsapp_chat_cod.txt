@@ -1,0 +1,69 @@
+03/03/2025, 09:00 - Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them. Learn more.
+03/03/2025, 09:00 - Synthetic Shop created group "COD Orders (SYNTHETIC TEST DATA)"
+03/03/2025, 09:05 - Synthetic Shop: This whole file is fake test data for the MarketPulse parser. No real person appears in it.
+03/03/2025, 14:00 - Synthetic Shop: Test Buyer One
+10 Sample Street
+Example Nagar
+Chennai
+600001
+9000000101
+1 CXE(500),1 LP(150)
+03/03/2025, 14:10 - Synthetic Shop: Test Buyer Two
+6 Example Lane
+Madurai
+625001
+9000000102
+03/03/2025, 14:20 - Synthetic Shop: Test Buyer Three
+15 Test Road
+Coimbatore
+641001
+9000000103
+1 cxe
+03/03/2025, 14:21 - Synthetic Shop: <Media omitted>
+03/03/2025, 15:00 - Synthetic Shop: Test Buyer Four
+2 Sample Quarters
+Kochi
+682001
+9000000104
+1 lp(5)
+03/03/2025, 15:10 - Synthetic Shop: Test Buyer Five
+77 Example Towers
+Bengaluru
+560001
+9000000105
+1 cxe(50000)
+04/03/2025, 09:45 - Synthetic Shop: https://example.com/synthetic-tracking
+04/03/2025, 10:00 - Synthetic Shop: Test Buyer Six
+9 Test Colony
+Hyderabad
+500001
+9000000106
+2 cxe(1000), 1 FW(300)
+04/03/2025, 10:30 - Synthetic Shop: Test Buyer Seven
+40 Sample Main Road
+Thiruvananthapuram
+695001
+9000000107
+1 cxe(500)
+Prepaid
+04/03/2025, 11:00 - Synthetic Shop: Test Buyer Eight
+5 Example Block
+Old code 600001
+Madurai
+625001
+9000000108
+1 SERUM(600)
+04/03/2025, 11:30 - Synthetic Shop: Test Buyer Nine
+3 Test Villa
+Chennai
+600001
+9000000109
+0 cxe(500)
+04/03/2025, 12:00 - Synthetic Shop: 15 cxe,1 SS
+04/03/2025, 16:00 - Synthetic Shop: Test Buyer Ten
+28 Sample Enclave
+Example Nagar
+Coimbatore
+641001
+9000000110
+1 Kojiglow(350),1 BL(400),1 SS(450)

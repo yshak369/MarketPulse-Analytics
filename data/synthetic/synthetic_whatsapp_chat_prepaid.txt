@@ -1,0 +1,108 @@
+03/03/2025, 09:00 - Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them. Learn more.
+03/03/2025, 09:00 - Synthetic Shop created group "Prepaid Orders (SYNTHETIC TEST DATA)"
+03/03/2025, 09:05 - Synthetic Shop: This whole file is fake test data for the MarketPulse parser. No real person appears in it.
+03/03/2025, 10:15 - Synthetic Shop: Test Customer One
+12 Sample Street, Example Nagar
+Sample Taluk
+Madurai
+625001
+9000000001
+1 cxe/-, 1 LP
+03/03/2025, 10:20 - Synthetic Shop: Test Customer Two
+4/21 Example Road
+Sampleville
+Chennai
+600001
+9000000002
+03/03/2025, 10:21 - Synthetic Shop: <Media omitted>
+03/03/2025, 10:40 - Synthetic Shop: Test Customer Three
+7 Example Road
+Near Sample Temple
+Coimbatore
++91 90000 00003
+9000000004
+641 001
+04/03/2025, 11:02 - Synthetic Shop: https://example.com/synthetic-link
+04/03/2025, 11:30 - Synthetic Shop: 20 cxe,2 LP,1 BL
+04/03/2025, 12:10 - Synthetic Shop: Name: Test Customer Four
+Address: 3 Test Lane, Example Town, Sample District, Kochi 682001
+Pho No: 9000000005
+04/03/2025, 12:45 - Synthetic Shop: Test Customer Five
+18 Sample Colony
+Bengaluru
+560001
+9000000006
+2 cxe <This message was edited>
+04/03/2025, 12:46 - Synthetic Shop: You deleted this message
+04/03/2025, 13:00 - Synthetic Shop: To place an order please send
+Name:
+Address:
+Pin code:
+Phone number:
+Payment number: 9000000099
+05/03/2025, 10:05 - Synthetic Shop: [04/03, 22:36] Synthetic Shop: Test Customer Six
+1 Test Street
+Sampleville
+Thiruvananthapuram
+695001
+9000000007
+[05/03, 09:17] Synthetic Shop: Test Customer Seven
+2 Test Street
+Sampleville
+Hyderabad
+500001
+9000000008
+1 cxe/-
+05/03/2025, 11:00 - Synthetic Shop: Test Customer Eight
+5 Example Avenue
+Madurai
+625001
+9000000009
+1 cxe,1 mystery cream
+05/03/2025, 11:30 - Synthetic Shop: Test Customer Nine
+9 Sample Cross Road
+Example Layout
+Chennai
+600001
+1 Serum
+05/03/2025, 12:00 - Synthetic Shop: Test Customer Ten
+22 Test Garden
+Coimbatore
+641001
+9000000010
+1 cxe(500)
+05/03/2025, 18:30 - Synthetic Shop: Test Customer One
+12 Sample Street, Example Nagar
+Sample Taluk
+Madurai
+625001
+9000000001
+1 cxe/-, 1 LP
+06/03/2025, 09:10 - Synthetic Shop: Test Customer Eleven
+31 Example Market Road
+Kochi
+682001
+9000000011
+
+
+Cod
+06/03/2025, 09:30 - Synthetic Shop: Reminder
+Pack the fake parcels before noon
+Check the sample labels
+06/03/2025, 10:00 - Synthetic Shop: Test Customer Twelve
+8 Sample Hostel Road
+Example Nagar
+Nowhere Town
+999999
+9000000012
+1 Moisturizer, 1 FW
+06/03/2025, 10:30 - Synthetic Shop: TEST CUSTOMER THIRTEEN.
+14 EXAMPLE STREET
+SAMPLE POST
+HYDERABAD
+Telangana
+500001
+09000000013
+1 SS,2 BL
+06/03/2025, 10:31 - Synthetic Shop:
+06/03/2025, 10:31 - Synthetic Shop: <Media omitted>
