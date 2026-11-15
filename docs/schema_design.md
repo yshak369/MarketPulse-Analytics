@@ -191,4 +191,3 @@ One row per shipment. Most of this table will be empty until courier records are
 2. **COD amounts:** one amount per product line is assumed (see `whatsapp_parser_plan.md`).
 3. **Shipment records:** which courier reports are available to fill `shipments`.
 4. **Shopify headings:** exact column names, to be read from the real export file locally.
-5. **Public data:** fully synthetic data is the recommended choice. Not yet confirmed by the owner.

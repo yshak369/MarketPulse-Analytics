@@ -8,7 +8,7 @@ Last checked: 13 November 2026.
 
 - **No public dataset has been downloaded yet.**
 - The main analysis is planned around the owner's private business data, which never enters this repository. See `data_privacy.md`.
-- The public portfolio will use either clearly labelled synthetic data or one of the public datasets below. This is not decided yet.
+- The public portfolio will use fully synthetic data. See `synthetic_data_plan.md`. The public datasets below are kept as a record of the research.
 
 ## Candidate public datasets
 

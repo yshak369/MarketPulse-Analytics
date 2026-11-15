@@ -4,7 +4,7 @@ An end-to-end e-commerce sales and marketing analytics portfolio project.
 
 It analyses sales, advertising, customer behaviour, product performance and profitability, using SQL, Python, Pandas, NumPy, PostgreSQL and Power BI.
 
-> Status: Phase 1 (project structure and dataset research) in progress.
+> Status: Phase 1 complete. Phase 2 (database schema and data importing) not started.
 
 ## Modules
 
@@ -20,6 +20,7 @@ It analyses sales, advertising, customer behaviour, product performance and prof
 |---|---|
 | `data/raw` | Original downloaded datasets. Never edited. |
 | `data/processed` | Cleaned data created by Python. |
+| `data/synthetic` | Synthetic (fake) data for the public portfolio. Clearly labelled. |
 | `sql` | PostgreSQL schema and analysis queries. |
 | `notebooks` | Jupyter notebooks for cleaning and exploratory analysis. |
 | `python` | Reusable Python scripts. |
