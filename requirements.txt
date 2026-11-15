@@ -1,0 +1,4 @@
+# Python packages needed by MarketPulse Analytics.
+# Install with: python -m pip install -r requirements.txt
+pandas==2.3.3
+numpy==2.2.6
