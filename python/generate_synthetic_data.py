@@ -10,8 +10,7 @@ How to run (from the project folder):
 Output: CSV files in data/synthetic/, each name starting with "synthetic_".
 
 Tables built so far: products, product_aliases, customers, orders,
-order_items, ad_campaigns, ad_performance. The shipments table is
-added in a later step.
+order_items, ad_campaigns, ad_performance, shipments.
 """
 
 from pathlib import Path
@@ -143,6 +142,22 @@ CTR_RANGE = (0.015, 0.035)             # all clicks as a share of impressions
 LINK_CLICK_SHARE_RANGE = (0.50, 0.80)  # link clicks as a share of all clicks
 CONVERSATION_SHARE_RANGE = (0.30, 0.60)  # conversations started per link click
 LANDING_VIEW_SHARE_RANGE = (0.60, 0.90)  # landing page views per link click
+
+# ---------------------------------------------------------------------
+# Invented settings for shipments. None of these come from the real business.
+# ---------------------------------------------------------------------
+
+# Payment type: (courier, delivery days lowest-highest, shipping cost lowest-highest,
+#                chance of delivered / returned / unknown)
+SHIPPING = {
+    "prepaid": ("speed_post", (3, 8), (50, 80), [0.96, 0.02, 0.02]),
+    "cod": ("delhivery", (2, 6), (70, 110), [0.80, 0.17, 0.03]),
+}
+DELIVERY_STATUSES = ["delivered", "returned", "unknown"]
+
+# The made-up state that parcels are sent from. Orders to this state
+# arrive one day faster. This is an invented choice.
+DISPATCH_STATE = "Karnataka"
 
 
 def make_random_ids(rng, prefix, count):
@@ -481,6 +496,58 @@ def build_ads(rng, orders):
     return campaigns_table, performance_table
 
 
+def build_shipments(rng, orders):
+    """Build the shipments table: one row per order that was sent.
+
+    Cancelled Shopify orders and 'needs_review' orders are not sent,
+    so they get no shipment.
+
+    The delivery and return rates are invented. They are not real results.
+    """
+    shipments = []
+
+    for order in orders.itertuples():
+        was_cancelled = not pd.isna(order.cancelled_at)
+        if was_cancelled or order.payment_type == "needs_review":
+            continue
+
+        courier, day_range, cost_range, status_chances = SHIPPING[order.payment_type]
+        status = rng.choice(DELIVERY_STATUSES, p=status_chances)
+
+        # Delivery time in days. rng.integers leaves out the top number, so add 1.
+        days = int(rng.integers(day_range[0], day_range[1] + 1))
+        if order.state == DISPATCH_STATE:
+            days -= 1
+
+        shipping_cost = int(rng.integers(cost_range[0], cost_range[1] + 1))
+        if status == "returned" and order.payment_type == "cod":
+            shipping_cost *= 2  # paid for the trip out and the trip back
+
+        delivered_date = None
+        cod_amount_received = None
+        if status == "delivered":
+            delivered_date = (order.order_datetime + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+            # Money is received only for a delivered COD order with a known amount.
+            if order.payment_type == "cod" and not pd.isna(order.order_amount):
+                cod_amount_received = order.order_amount
+
+        shipments.append(
+            {
+                "order_id": order.order_id,
+                "courier": courier,
+                "delivery_status": status,
+                "delivered_date": delivered_date,
+                "cod_amount_received": cod_amount_received,
+                "shipping_cost": shipping_cost,
+            }
+        )
+
+    shipments_table = pd.DataFrame(shipments)
+    shipments_table.insert(0, "shipment_id", make_random_ids(rng, "S", len(shipments_table)))
+    shipments_table["cod_amount_received"] = shipments_table["cod_amount_received"].astype("Int64")
+    return shipments_table
+
+
 def save(table, name):
     """Write one table to data/synthetic/synthetic_<name>.csv."""
     path = OUTPUT_DIR / f"synthetic_{name}.csv"
@@ -506,6 +573,8 @@ def main():
     ad_campaigns, ad_performance = build_ads(rng, orders)
     save(ad_campaigns, "ad_campaigns")
     save(ad_performance, "ad_performance")
+
+    save(build_shipments(rng, orders), "shipments")
 
     print("Done. This data is fake and must never be presented as real.")
 
