@@ -2,7 +2,7 @@
 
 This file records every dataset considered or used in MarketPulse Analytics.
 
-Last checked: 13 November 2026.
+Last checked: 15 November 2026.
 
 ## Current status
 
@@ -52,6 +52,23 @@ Last checked: 13 November 2026.
 | Fits modules | Marketing, only partly. |
 | Limits | Customer-level campaign responses. It does **not** contain advertising spend, impressions or clicks, so it cannot support cost-per-order analysis. |
 | Status | Weak fit. Not downloaded. |
+
+### 4. All India Pincode Directory (India Post)
+
+This dataset is not for analysis by itself. It is a lookup list: the WhatsApp parser uses it to find the district and state of an order from its PIN code. See `whatsapp_parser_plan.md`, section 9.
+
+| Item | Detail |
+|---|---|
+| Link | https://www.data.gov.in/catalog/all-india-pincode-directory |
+| Publisher | Department of Posts, Government of India, on the Open Government Data Platform India |
+| Contents (from third-party descriptions) | One row per post office, about 157,000 rows. Columns include circle, region, division, office name, PIN code, office type, delivery, district and state. Updated monthly |
+| Licence name | **Verified by the owner in a browser on 15 November 2026.** The data.gov.in page footer states that content is "licensed under the Government Open Data License-India" (GODL-India) |
+| Licence terms | **Not verified.** The licence text at https://www.data.gov.in/Godl has not been read yet. Third-party pages say it allows any use if credit is given |
+| Fits modules | Sales, Customer, Payment and Shipping (all location analysis) |
+| Limits | One PIN code can cover several post offices, so the list must be reduced to one row per PIN code. The official pages refuse automated reading, so the file must be downloaded by hand |
+| Status | Candidate. Not downloaded. |
+
+**To do before use:** read the licence text, then record here whether commercial use is allowed and the exact credit line required.
 
 ## Main finding
 
