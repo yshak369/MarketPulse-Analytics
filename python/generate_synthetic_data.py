@@ -10,7 +10,8 @@ How to run (from the project folder):
 Output: CSV files in data/synthetic/, each name starting with "synthetic_".
 
 Tables built so far: products, product_aliases, customers, orders,
-order_items. The other tables are added in later steps.
+order_items, ad_campaigns, ad_performance. The shipments table is
+added in a later step.
 """
 
 from pathlib import Path
@@ -104,6 +105,44 @@ DEFAULTED_PRODUCT_CHANCE = 0.01  # WhatsApp orders with no product line
 PAYMENT_CONFLICT_CHANCE = 0.005  # WhatsApp orders with unclear payment type
 DUPLICATE_SHARE = 0.005          # WhatsApp orders posted twice
 SHOPIFY_CANCEL_CHANCE = 0.03     # Shopify orders that were cancelled
+
+# ---------------------------------------------------------------------
+# Invented settings for advertising. None of these come from the real business.
+# ---------------------------------------------------------------------
+
+# What a "result" means for each kind of campaign. These two must never
+# be added together.
+RESULT_INDICATORS = {
+    "messaging": "actions:onsite_conversion.messaging_conversation_started_7d",
+    "post": "actions:link_click",
+}
+
+# Made-up campaigns:
+# (name, kind, start date, end date or None if ongoing,
+#  budget amount or None if set at ad set level, usual spend per day in rupees)
+# Two campaigns share one name on purpose. Real exports do this too,
+# which is why the campaign ID, not the name, is the key.
+CAMPAIGNS = [
+    ("Synthetic WhatsApp Campaign A", "messaging", "2025-01-01", None, 500, 450),
+    ("Synthetic WhatsApp Campaign B", "messaging", "2025-01-01", "2025-06-30", None, 300),
+    ("Synthetic WhatsApp Campaign C", "messaging", "2025-04-01", None, 400, 350),
+    ("Synthetic Festive Offer Campaign", "messaging", "2025-10-01", "2025-11-15", 800, 700),
+    ("Synthetic WhatsApp Campaign E", "messaging", "2025-07-01", None, None, 300),
+    ("Synthetic Instagram Post Boost", "post", "2025-02-01", "2025-02-28", 200, 150),
+    ("Synthetic Instagram Post Boost", "post", "2025-06-01", "2025-06-30", 200, 150),
+    ("Synthetic Instagram Reel Boost", "post", "2025-09-01", "2025-09-21", 250, 200),
+]
+
+NO_DELIVERY_CHANCE = 0.03        # days when a campaign showed no ads at all
+SPEND_NOISE = 0.15               # how much daily spend wobbles at random
+
+# Ranges used to build the daily numbers, as (lowest, highest).
+CPM_RANGE = {"messaging": (80, 150), "post": (60, 120)}  # rupees per 1,000 impressions
+REACH_SHARE_RANGE = (0.75, 0.95)       # reach as a share of impressions
+CTR_RANGE = (0.015, 0.035)             # all clicks as a share of impressions
+LINK_CLICK_SHARE_RANGE = (0.50, 0.80)  # link clicks as a share of all clicks
+CONVERSATION_SHARE_RANGE = (0.30, 0.60)  # conversations started per link click
+LANDING_VIEW_SHARE_RANGE = (0.60, 0.90)  # landing page views per link click
 
 
 def make_random_ids(rng, prefix, count):
@@ -352,6 +391,96 @@ def build_orders_and_items(rng, customers):
     return orders_table, items_table
 
 
+def build_ads(rng, orders):
+    """Build the ad_campaigns table and the ad_performance table.
+
+    IMPORTANT: the link between spend and orders is artificial. Weeks
+    with more synthetic orders are given more ad spend, plus random
+    noise. So spend and orders move together in this data only because
+    this function makes them. It proves nothing about real advertising.
+    """
+    # How busy each week was, compared with an average week (1.0 = average).
+    # A week is named by its Monday.
+    order_days = orders["order_datetime"].dt.normalize()
+    week_starts = order_days - pd.to_timedelta(order_days.dt.dayofweek, unit="D")
+    orders_per_week = week_starts.value_counts()
+    week_factor = (orders_per_week / orders_per_week.mean()).clip(0.5, 2.0)
+
+    # Made-up 18-digit campaign IDs.
+    campaign_ids = set()
+    while len(campaign_ids) < len(CAMPAIGNS):
+        campaign_ids.add("120" + "".join(str(d) for d in rng.integers(0, 10, size=15)))
+    campaign_ids = sorted(campaign_ids)
+    rng.shuffle(campaign_ids)
+
+    campaigns = []
+    performance = []
+
+    for campaign_id, (name, kind, start, end, budget, usual_spend) in zip(campaign_ids, CAMPAIGNS):
+        campaigns.append(
+            {
+                "campaign_id": campaign_id,
+                "campaign_name": name,
+                "delivery_status": "active" if end is None else "inactive",
+                "attribution_setting": "7-day click or 1-day view" if kind == "messaging" else None,
+                "budget_amount": budget,
+                "budget_type": "daily" if budget is not None else "ad_set_level",
+                "end_date": end,
+            }
+        )
+
+        # One row per day the campaign was running, inside the made-up year.
+        for day in pd.date_range(start, end or PERIOD_END, freq="D"):
+            if rng.random() < NO_DELIVERY_CHANCE:
+                continue  # no ads shown that day, so no row (zero-impression rows are skipped)
+
+            week_start = day - pd.Timedelta(days=day.dayofweek)
+            busy = week_factor.get(week_start, 1.0)
+            spend = round(usual_spend * busy * rng.lognormal(0, SPEND_NOISE), 2)
+
+            # Each number is built from the one before it, so they always
+            # make sense together (for example reach is never above impressions).
+            impressions = max(1, int(spend / rng.uniform(*CPM_RANGE[kind]) * 1000))
+            reach = max(1, int(impressions * rng.uniform(*REACH_SHARE_RANGE)))
+            clicks_all = int(impressions * rng.uniform(*CTR_RANGE))
+            link_clicks = int(clicks_all * rng.uniform(*LINK_CLICK_SHARE_RANGE))
+
+            if kind == "messaging":
+                # The result is a WhatsApp conversation started.
+                results = int(link_clicks * rng.uniform(*CONVERSATION_SHARE_RANGE))
+                landing_page_views = None   # these ads open WhatsApp, not a web page
+            else:
+                # The result is a link click.
+                results = link_clicks
+                landing_page_views = int(link_clicks * rng.uniform(*LANDING_VIEW_SHARE_RANGE))
+
+            performance.append(
+                {
+                    "campaign_id": campaign_id,
+                    "report_date": day.strftime("%Y-%m-%d"),
+                    "amount_spent_inr": spend,
+                    "impressions": impressions,
+                    "reach": reach,
+                    "link_clicks": link_clicks,
+                    "clicks_all": clicks_all,
+                    "landing_page_views": landing_page_views,
+                    "results": results,
+                    "result_indicator": RESULT_INDICATORS[kind],
+                }
+            )
+
+    campaigns_table = pd.DataFrame(campaigns)
+    campaigns_table["budget_amount"] = campaigns_table["budget_amount"].astype("Int64")
+
+    performance_table = pd.DataFrame(performance)
+    performance_table["landing_page_views"] = performance_table["landing_page_views"].astype("Int64")
+    performance_table = performance_table.sort_values(
+        ["report_date", "campaign_id"], kind="stable"
+    ).reset_index(drop=True)
+
+    return campaigns_table, performance_table
+
+
 def save(table, name):
     """Write one table to data/synthetic/synthetic_<name>.csv."""
     path = OUTPUT_DIR / f"synthetic_{name}.csv"
@@ -373,6 +502,10 @@ def main():
     orders, order_items = build_orders_and_items(rng, customers)
     save(orders, "orders")
     save(order_items, "order_items")
+
+    ad_campaigns, ad_performance = build_ads(rng, orders)
+    save(ad_campaigns, "ad_campaigns")
+    save(ad_performance, "ad_performance")
 
     print("Done. This data is fake and must never be presented as real.")
 

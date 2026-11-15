@@ -1,0 +1,9 @@
+campaign_id,campaign_name,delivery_status,attribution_setting,budget_amount,budget_type,end_date
+120565139027107224,Synthetic WhatsApp Campaign A,active,7-day click or 1-day view,500,daily,
+120111629465817546,Synthetic WhatsApp Campaign B,inactive,7-day click or 1-day view,,ad_set_level,2025-06-30
+120454363002200843,Synthetic WhatsApp Campaign C,active,7-day click or 1-day view,400,daily,
+120686143559851115,Synthetic Festive Offer Campaign,inactive,7-day click or 1-day view,800,daily,2025-11-15
+120342538219708160,Synthetic WhatsApp Campaign E,active,7-day click or 1-day view,,ad_set_level,
+120892357041260808,Synthetic Instagram Post Boost,inactive,,200,daily,2025-02-28
+120951772619529580,Synthetic Instagram Post Boost,inactive,,200,daily,2025-06-30
+120680062776828832,Synthetic Instagram Reel Boost,inactive,,250,daily,2025-09-21
