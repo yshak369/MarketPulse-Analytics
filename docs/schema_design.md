@@ -147,11 +147,13 @@ One row per campaign per day.
 | `clicks_all` | integer | |
 | `landing_page_views` | integer | |
 | `results` | integer | Meaning depends on `result_indicator` |
-| `result_indicator` | text | What a "result" is, for example a messaging conversation started or a link click |
+| `result_indicator` | text | What a "result" is. Seen so far: messaging conversation started, link click, post engagement |
 
 Primary key: `campaign_id` and `report_date` together. A campaign has at most one row per day.
 
-Rows with zero impressions are skipped when loading, because inactive campaigns still appear in every daily export.
+The daily export has a row for every campaign on every day, so most rows are empty. A row is skipped only when it is **completely empty**: impressions, spend, reach, link clicks, all clicks, landing page views and results are all zero or blank.
+
+A row with zero impressions is **not** skipped if it has results. Meta can count a messaging conversation up to 7 days after a person saw the ad, on a day when the campaign showed no ads at all. Skipping such rows would lose real conversations.
 
 ### 4.8 `shipments`
 
@@ -170,7 +172,7 @@ One row per shipment. Most of this table will be empty until courier records are
 ## 5. Design rules
 
 1. **Store raw numbers only.** CPM, CPC, CTR, frequency and cost per result are not stored. They are calculated in SQL from spend, impressions, reach, clicks and results. This avoids two versions of the same number.
-2. **Never add results of different kinds.** `results` is totalled only within the same `result_indicator`. Messaging conversations and link clicks are different things.
+2. **Never add results of different kinds.** `results` is totalled only within the same `result_indicator`. Messaging conversations, link clicks and post engagements are different things.
 3. **Never add reach across days.** The same person can be reached on several days, so adding daily reach counts them more than once.
 4. **Load only the campaigns export.** The ad set and ad exports contain the same spend at a finer level. Loading all three would count spend three times.
 5. **Unknown stays unknown.** Empty values are left empty. They are not filled with guesses.
