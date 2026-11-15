@@ -45,7 +45,7 @@ CREATE TABLE product_aliases (
 CREATE TABLE customers (
     customer_id    text PRIMARY KEY,               -- new random ID, not made from the phone
     customer_name  text,                           -- private only; placeholder in synthetic data
-    phone          text                            -- private only; empty in synthetic data
+    phone          text UNIQUE                     -- one phone = one customer; empty in synthetic data
 );
 
 -- ---------------------------------------------------------------------

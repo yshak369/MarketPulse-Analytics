@@ -71,7 +71,7 @@ One row per customer.
 |---|---|---|
 | `customer_id` | text, primary key | New random ID. Not made from the phone number |
 | `customer_name` | text | Private only |
-| `phone` | text | Private only. Used to recognise a repeat customer |
+| `phone` | text, unique | Private only. One phone number = one customer, across WhatsApp and Shopify. Empty in synthetic data |
 
 ### 4.4 `orders`
 
@@ -85,8 +85,8 @@ One row per order, from WhatsApp or Shopify.
 | `sales_channel` | text | `whatsapp` or `shopify` |
 | `payment_type` | text | `prepaid`, `cod` or `needs_review` |
 | `address` | text | Private only |
-| `district_city` | text | |
-| `state` | text | |
+| `district_city` | text | For WhatsApp orders, looked up from the PIN code, not read from the address text |
+| `state` | text | For WhatsApp orders, looked up from the PIN code |
 | `pin_code` | text | Private only, or shortened in the public version |
 | `order_amount` | numeric | Can be empty. See `amount_basis` |
 | `amount_basis` | text | `cod_collectible`, `shopify_total`, `estimated` or `unknown` |
@@ -187,7 +187,6 @@ One row per shipment. Most of this table will be empty until courier records are
 
 ## 7. Still to confirm
 
-1. **Customer matching:** whether the same phone number in WhatsApp and Shopify should be treated as one customer.
-2. **COD amounts:** one amount per product line is assumed (see `whatsapp_parser_plan.md`).
-3. **Shipment records:** which courier reports are available to fill `shipments`.
-4. **Shopify headings:** exact column names, to be read from the real export file locally.
+1. **COD amounts:** one amount per product line is assumed (see `whatsapp_parser_plan.md`).
+2. **Shipment records:** which courier reports are available to fill `shipments`.
+3. **Shopify headings:** exact column names, to be read from the real export file locally.
