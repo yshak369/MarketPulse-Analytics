@@ -6,7 +6,7 @@ Last checked: 15 November 2026.
 
 ## Current status
 
-- **No public dataset has been downloaded yet.**
+- One public dataset has been downloaded: the India Post PIN code directory (dataset 4 below), used only as a lookup list.
 - The main analysis is planned around the owner's private business data, which never enters this repository. See `data_privacy.md`.
 - The public portfolio will use fully synthetic data. See `synthetic_data_plan.md`. The public datasets below are kept as a record of the research.
 
@@ -61,12 +61,14 @@ This dataset is not for analysis by itself. It is a lookup list: the WhatsApp pa
 |---|---|
 | Link | https://www.data.gov.in/catalog/all-india-pincode-directory |
 | Publisher | Department of Posts, Government of India, on the Open Government Data Platform India |
-| Contents (from third-party descriptions) | One row per post office, about 157,000 rows. Columns include circle, region, division, office name, PIN code, office type, delivery, district and state. Updated monthly |
+| Contents (checked in the downloaded file) | One row per post office: 165,627 rows covering 19,586 PIN codes. Columns: `circlename`, `regionname`, `divisionname`, `officename`, `pincode`, `officetype`, `delivery`, `district`, `statename`, `latitude`, `longitude` |
+| Downloaded | 15 November 2026, by the owner in a browser. Saved in `data/raw/` (ignored by Git) as `5c2f62fe-5afa-4119-a499-fec9d604d5bd.csv` |
+| How it is used | `python/prepare_pin_codes.py` reduces it to one row per PIN code (`pin_code`, `district`, `state`), saved in `data/processed/pin_codes.csv` (ignored by Git) |
 | Licence name | **Verified by the owner in a browser on 15 November 2026.** The data.gov.in page footer states that content is "licensed under the Government Open Data License-India" (GODL-India) |
 | Licence terms | **Partly verified by the owner on 15 November 2026**, from the licence text at https://www.data.gov.in/Godl: commercial use is allowed, subject to the licence conditions. The exact credit line required has not been recorded yet |
 | Fits modules | Sales, Customer, Payment and Shipping (all location analysis) |
-| Limits | One PIN code can cover several post offices, so the list must be reduced to one row per PIN code. The official pages refuse automated reading, so the file must be downloaded by hand |
-| Status | Candidate. Not downloaded. |
+| Limits | Of the 19,586 PIN codes, 18,228 (93%) have one clear district and state. For 1,358 the post offices list more than one district or none, so the district is left empty and such orders are flagged. For 152 the state is also unclear. District names are in capitals, and "NA" in the source means not available. The official pages refuse automated reading, so the file must be downloaded by hand |
+| Status | Downloaded. In use as a lookup list for the WhatsApp parser. |
 
 **To do before use:** record here the exact credit line that the licence requires.
 

@@ -529,7 +529,11 @@ def fill_district_and_state(orders, pin_codes):
         elif pin_codes[pin_code] is None:
             order.flags.append("pin_code_ambiguous")
         else:
+            # The list leaves a district or state empty when the PIN code
+            # covers more than one. Fill what is known and flag the rest.
             order.district_city, order.state = pin_codes[pin_code]
+            if not order.district_city or not order.state:
+                order.flags.append("pin_code_ambiguous")
 
 
 def validate_orders(orders, pin_codes=None):

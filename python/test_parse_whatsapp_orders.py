@@ -321,6 +321,13 @@ class PinCodeLookupTest(unittest.TestCase):
         parser.validate_orders([order], pin_codes)
         self.assertEqual((order.district_city, order.flags), ("", ["pin_code_ambiguous"]))
 
+    def test_list_with_empty_district_fills_the_state_and_flags_the_order(self):
+        order = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        order.pin_codes = ["641001"]
+        parser.validate_orders([order], {"641001": ("", "TAMIL NADU")})
+        self.assertEqual((order.district_city, order.state), ("", "TAMIL NADU"))
+        self.assertEqual(order.flags, ["pin_code_ambiguous"])
+
     def test_without_a_list_nothing_is_filled_or_flagged(self):
         orders = {o.name: o for o in parse_fake_chats()}
         self.assertEqual(orders["Test Customer Twelve"].flags, [])
