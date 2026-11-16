@@ -54,7 +54,7 @@ def make_tables():
     return {
         "products": pd.DataFrame({
             "product_code": ["CXE", "LP"], "product_name": ["Cream", "Lip balm"],
-            "selling_price": [500.0, 150.0], "unit_cost": [200.0, 60.0]}),
+            "selling_price": [500.0, 150.0], "unit_cost": [200.0, 60.0], "cod_price": [600.0, 200.0]}),
         "product_aliases": pd.DataFrame({
             "alias": ["cxe", "lp"], "source": ["whatsapp", "whatsapp"], "product_code": ["CXE", "LP"]}),
         "customers": pd.DataFrame({
