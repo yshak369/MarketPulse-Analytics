@@ -52,7 +52,7 @@ CREATE TABLE customers (
 -- 4. orders: one row per order, from WhatsApp or Shopify
 -- ---------------------------------------------------------------------
 CREATE TABLE orders (
-    order_id            text PRIMARY KEY,          -- new random ID
+    order_id            text PRIMARY KEY,          -- 'W-' + random code, or 'S-' + Shopify order number
     customer_id         text NOT NULL REFERENCES customers (customer_id),
     order_datetime      timestamp NOT NULL,        -- Indian local time
     sales_channel       text NOT NULL CHECK (sales_channel IN ('whatsapp', 'shopify')),

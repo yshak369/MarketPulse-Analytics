@@ -1,6 +1,6 @@
 # WhatsApp Order Parser Plan
 
-Status: approved plan, version 2. No code has been written yet.
+Status: approved plan, version 2. Built in Phase 2 as `python/parse_whatsapp_orders.py`.
 
 Version 2 was written after the owner checked the layout of real exported chats. Real chats turned out to be messier than the first plan assumed.
 
@@ -10,7 +10,7 @@ All examples in this document are fake. No real customer data appears here.
 
 Most orders are collected by hand in two WhatsApp groups: **Prepaid** and **COD**. The parser is a small Python script that turns the exported chat text into clean tables, so the orders can be analysed with SQL, Pandas and Power BI.
 
-The parser runs only on the owner's computer. It uses plain Python and Pandas. It does not use any AI service.
+The parser runs only on the owner's computer. It uses plain Python. It does not use any AI service.
 
 ## 2. Confirmed facts about the workflow
 
@@ -127,8 +127,8 @@ Product line formats:
 7. **Payment type.** Set from the source group, then checked against payment words in the message.
 8. **Validate.** The rules in section 10 are applied. A failed rule adds a flag.
 9. **Output.** Clean orders, order items, a review queue with the reason for each flag, and a short summary of what was skipped.
-10. **Manual review.** The owner fixes or confirms the flagged rows.
-11. **Load.** Approved rows are loaded into the private PostgreSQL database.
+10. **Manual review.** The owner looks through the review queue and fixes what can be fixed in the owner's own files: the alias file, the ignore list and the PIN code override file. Then the parser is run again.
+11. **Load.** `sql/03_load_whatsapp_orders.sql` loads the orders into the private PostgreSQL database. Flagged orders are loaded together with their flags, so analysis can count them separately or leave them out. An order the tables cannot hold, such as one with an unknown product, is skipped and listed.
 
 ## 6. Filter rules
 
@@ -186,7 +186,7 @@ India Post publishes a public list that maps each PIN code to its district and s
 - The Shopify script takes the same file, so both channels use the same districts.
 - The real file is private. `data/synthetic/synthetic_pin_code_overrides.csv` is a fake one for tests.
 
-The list is a public dataset. Its source and licence must be recorded in `dataset_sources.md` before it is downloaded.
+The list is a public dataset: the All India Pincode Directory from India Post. Its source and licence are recorded in `dataset_sources.md` (dataset 4). `python/prepare_pin_codes.py` reduces it to one row per PIN code.
 
 ## 10. Validation rules
 
@@ -222,26 +222,32 @@ This is a business rule set by the owner, not a guess by the parser.
 
 | Field | Source | Notes |
 |---|---|---|
-| `order_id` | Generated | Random ID, not from WhatsApp |
-| `message_datetime` | Export timestamp | When the order was **recorded** in the chat. The real order may be a day or two earlier |
-| `source_group` | File name | `prepaid` or `cod` |
+| `order_id` | Generated | `W-` and a random code. Not made from the phone or the name |
+| `order_datetime` | Export timestamp | When the order was **recorded** in the chat. The real order may be a day or two earlier |
+| `sales_channel` | Parser | Always `whatsapp` |
+| `source_group` | The group the chat file was exported from | `prepaid` or `cod` |
 | `payment_type` | Group and payment words | `prepaid`, `cod` or `needs_review` |
 | `customer_name` | Message | Private only |
-| `address` | Message | Private only |
-| `pin_code` | Message | Private only |
-| `district_city` | PIN code list | |
-| `state` | PIN code list | |
 | `phone` | Message | Private only. One phone number = one customer, across WhatsApp and Shopify |
+| `address` | Message | Private only |
+| `pin_code` | Message | Private only. Empty when the message has more than one |
+| `district_city` | PIN code list, or the owner's override file | |
+| `state` | PIN code list, or the owner's override file | |
+| `order_amount` | Product lines | The amount to collect. Only for a COD order with an amount on every line. Otherwise empty |
+| `amount_basis` | Parser | `cod_collectible` or `unknown` |
 | `review_flags` | Parser | List of reasons, empty if clean |
 | `notes` | Parser | For example `product_defaulted_to_cxe`, a second phone, or the inner time of a copied order |
-| `raw_message` | Export | Private only, kept to check the parser's work |
+| `source_line` | Export | The line number of the message in the chat file |
+
+The original message text is written only to the review queue file, and only for flagged orders. It is private, and is kept to check the parser's work.
 
 ### Order items (one row per product line)
 
 | Field | Example | Notes |
 |---|---|---|
 | `order_id` | (link) | Joins to the order |
-| `product_code` | `CXE` | From the alias file. Stored in capitals |
+| `product_code` | `CXE` | From the alias file. Stored in capitals. Empty when the name is unknown |
+| `raw_name` | `cxe` | The name as written, in lower case |
 | `quantity` | `1` | Whole number |
 | `cod_collectible_amount` | `900` | COD only. Total for the line. Empty for prepaid |
 | `product_defaulted` | `true` | True when the order had no product line |

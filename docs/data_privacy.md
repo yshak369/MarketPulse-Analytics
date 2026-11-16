@@ -39,7 +39,7 @@ Notes:
 
 ## Rules for real data
 
-1. Real data stays in a private folder outside this project folder. The exact location is still to be chosen.
+1. Real data stays in a private folder outside this project folder: `D:\Private\MarketPulse-Data\`. See `private_setup_guide.md`.
 2. Real data is never committed to Git or pushed to GitHub.
 3. Real data is never uploaded or pasted into an external AI service, including coding assistants.
 4. Code is written and tested with fake examples. The owner then runs it on the real data locally.

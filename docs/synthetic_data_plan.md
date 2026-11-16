@@ -2,7 +2,7 @@
 
 Status: approved plan. The data was generated in Phase 2 and is in `data/synthetic/`.
 
-This file explains how the fake data for the public portfolio will be made.
+This file explains how the fake data for the public portfolio is made.
 
 ## 1. Decisions
 
@@ -23,14 +23,14 @@ Tuned values would leak confidential figures, such as the real COD share, ad spe
 - One Python script, `python/generate_synthetic_data.py`, using NumPy and Pandas.
 - The script uses a **fixed random seed**. The "random" numbers come out the same on every run, so anyone can rebuild exactly the same dataset.
 - It fills the same eight tables as the approved schema (see `schema_design.md`).
-- Output goes to `data/synthetic/`. This folder is tracked by Git, unlike `data/raw` and `data/processed`. The files are expected to be under 1 MB in total.
+- Output goes to `data/synthetic/`. This folder is tracked by Git, unlike `data/raw` and `data/processed`. The files are about 0.8 MB in total.
 
 ## 4. What each table gets
 
 | Table | Plan |
 |---|---|
 | `products` | The same 8 product codes, with made-up prices and costs |
-| `product_aliases` | Made-up Shopify product names |
+| `product_aliases` | Each product code as written in WhatsApp, and a made-up Shopify product title |
 | `customers` | About 2,000 customers named `Synthetic Customer 0001`, `Synthetic Customer 0002` and so on. Phone left empty, so no number can belong to a real person |
 | `orders` | About 3,000 orders over the made-up year. Real Indian state and district names from a public list. Address and PIN code left empty |
 | `order_items` | 1 to 3 products per order |
@@ -52,14 +52,17 @@ These give the analysis something to find:
 
 ## 6. Messy data on purpose
 
-A small share of rows will have problems, so the cleaning phase has real work to show:
+A small share of rows has problems, so the cleaning phase has real work to show:
 
 - Missing districts
-- Unknown product names
 - Orders with no product line (defaulted to 1 CXE)
+- Orders with an unclear payment type
 - Duplicate orders
+- Cancelled Shopify orders
 
-Fake WhatsApp chat export files will also be generated to demonstrate the parser. They follow the message layout in `whatsapp_parser_plan.md` and contain only fake names, addresses and numbers.
+An unknown product name cannot be stored in the tables, so it appears in the fake export files instead.
+
+Fake export files test the import code: two WhatsApp chats, a Meta Ads export and a Shopify export. They are fixed test files, not made by the generator. They follow the real layouts and contain only fake names, addresses and numbers.
 
 ## 7. Labelling
 

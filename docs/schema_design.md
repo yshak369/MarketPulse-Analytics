@@ -79,14 +79,14 @@ One row per order, from WhatsApp or Shopify.
 
 | Column | Type | Notes |
 |---|---|---|
-| `order_id` | text, primary key | New random ID |
+| `order_id` | text, primary key | A random code after `W-` (WhatsApp) or `O-` (synthetic data). For Shopify, `S-` and the Shopify order number, so loading an order again updates it instead of adding a copy |
 | `customer_id` | text, links to `customers` | |
 | `order_datetime` | timestamp | WhatsApp message time or Shopify order time |
 | `sales_channel` | text | `whatsapp` or `shopify` |
 | `payment_type` | text | `prepaid`, `cod` or `needs_review` |
 | `address` | text | Private only |
-| `district_city` | text | For WhatsApp orders, looked up from the PIN code, not read from the address text |
-| `state` | text | For WhatsApp orders, looked up from the PIN code |
+| `district_city` | text | Looked up from the PIN code, not read from the address text. The owner's override file is used where the official list cannot decide |
+| `state` | text | Looked up from the PIN code, in the same way |
 | `pin_code` | text | Private only, or shortened in the public version |
 | `order_amount` | numeric | Can be empty. See `amount_basis` |
 | `amount_basis` | text | `cod_collectible`, `shopify_total`, `estimated` or `unknown` |
