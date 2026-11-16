@@ -506,8 +506,14 @@ def validate_order(order):
 
     # Amounts.
     amounts = [item.amount for item in order.items if item.amount is not None]
-    if order.source_group == "cod" and len(amounts) < len(order.items):
+    if order.source_group == "cod" and not amounts:
+        # No bracket at all. The owner's normal COD price can be used
+        # later, as a labelled estimate.
         flags.append("cod_amount_missing")
+    elif order.source_group == "cod" and len(amounts) < len(order.items):
+        # Only some products have a bracket. A bracket can hold the total
+        # for the whole order, so the amount cannot be worked out or estimated.
+        flags.append("cod_amount_partial")
     if order.source_group == "prepaid" and amounts:
         flags.append("prepaid_with_amount")
     if any(amount < MIN_LINE_AMOUNT or amount > MAX_LINE_AMOUNT for amount in amounts):

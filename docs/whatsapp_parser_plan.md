@@ -202,7 +202,8 @@ A failed rule flags the order for manual review. The parser never guesses a valu
 | Required fields | Name, address, PIN code and phone |
 | Quantity | Whole number, 1 or more |
 | Product name | Must be in the alias file. Unknown names are flagged |
-| COD without amount | A COD group order with a product line but no amount is flagged |
+| COD without amount | A COD group order where no product has a bracket gets `cod_amount_missing` |
+| COD with some amounts | A COD group order where only some products have a bracket gets `cod_amount_partial`. A bracket can hold the total for the whole order, so the amount stays unknown and is never estimated |
 | Prepaid with amount | A Prepaid group order with an amount is flagged as a conflict |
 | Payment conflict | If a payment word disagrees with the group, payment type is `needs_review` |
 | Amount | A line amount below Rs 50 or above Rs 10,000 is flagged. The limits are settings that the owner can change |

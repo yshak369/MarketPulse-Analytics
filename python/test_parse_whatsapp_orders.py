@@ -539,6 +539,37 @@ class ValidateFakeChatsTest(unittest.TestCase):
         self.assertEqual(amounts[("prepaid", "Test Customer Ten")], (None, "unknown"))
 
 
+class CodAmountFlagTest(unittest.TestCase):
+    """No bracket at all and only some brackets are two different cases."""
+
+    def cod_order(self, *amounts):
+        order = make_order("9000000201", datetime(2025, 3, 3, 10, 0), group="cod")
+        order.items = [parser.OrderItem("cxe", "CXE", 1, amount) for amount in amounts]
+        parser.validate_orders([order])
+        return order
+
+    def test_every_product_has_a_bracket(self):
+        order = self.cod_order(500.0, 150.0)
+        self.assertEqual(order.flags, [])
+        self.assertEqual(parser.order_amount_and_basis(order), (650.0, "cod_collectible"))
+
+    def test_no_bracket_at_all(self):
+        order = self.cod_order(None, None)
+        self.assertEqual(order.flags, ["cod_amount_missing"])
+        self.assertEqual(parser.order_amount_and_basis(order), (None, "unknown"))
+
+    def test_only_some_brackets(self):
+        # "1 cxe(650), 1 lp": the 650 may be for the cream or for the whole order.
+        order = self.cod_order(650.0, None)
+        self.assertEqual(order.flags, ["cod_amount_partial"])
+        self.assertEqual(parser.order_amount_and_basis(order), (None, "unknown"))
+
+    def test_prepaid_orders_get_neither_flag(self):
+        order = make_order("9000000201", datetime(2025, 3, 3, 10, 0), group="prepaid")
+        parser.validate_orders([order])
+        self.assertEqual(order.flags, [])
+
+
 class DuplicateRuleTest(unittest.TestCase):
     def flags(self, *orders):
         parser.validate_orders(list(orders))
