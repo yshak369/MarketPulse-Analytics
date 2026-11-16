@@ -46,8 +46,9 @@ One row per product.
 |---|---|---|
 | `product_code` | text, primary key | For example `CXE`. Stored in capitals |
 | `product_name` | text | For example Cream |
-| `selling_price` | numeric | Normal selling price. Used only for labelled estimates |
+| `selling_price` | numeric | Normal Prepaid price. Used only for labelled estimates |
 | `unit_cost` | numeric | Cost to the business for one unit. Filled privately |
+| `cod_price` | numeric | Normal COD price. Used only for labelled estimates, for COD products written without an amount. Added in November 2026 by `sql/06_add_cod_price.sql` |
 
 ### 4.2 `product_aliases`
 
@@ -191,4 +192,3 @@ One row per shipment. Most of this table will be empty until courier records are
 
 1. **COD amounts:** a bracket usually belongs to one product line, but sometimes holds the total for a whole order. How to settle such orders is still to be decided (see `whatsapp_parser_plan.md`, section 14).
 2. **Shipment records:** which courier reports are available to fill `shipments`.
-3. **Two normal prices:** a product has one normal price for COD and another for Prepaid. The `products` table holds one `selling_price` today. How to store both is to be decided in Phase 3.

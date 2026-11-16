@@ -36,7 +36,7 @@ RESTART IDENTITY;
 -- Load order matters: a table is loaded after the tables it points to.
 -- In CSV format an empty cell is loaded as NULL (unknown).
 
-\copy products (product_code, product_name, selling_price, unit_cost) FROM 'data/synthetic/synthetic_products.csv' WITH (FORMAT csv, HEADER true)
+\copy products (product_code, product_name, selling_price, unit_cost, cod_price) FROM 'data/synthetic/synthetic_products.csv' WITH (FORMAT csv, HEADER true)
 
 \copy product_aliases (alias, source, product_code) FROM 'data/synthetic/synthetic_product_aliases.csv' WITH (FORMAT csv, HEADER true)
 

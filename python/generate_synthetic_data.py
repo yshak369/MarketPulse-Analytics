@@ -27,18 +27,20 @@ NUM_CUSTOMERS = 2000
 # Folder for the output files: <project>/data/synthetic
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "synthetic"
 
-# Invented products: (code, name, selling price, unit cost).
-# The prices and costs are made-up round numbers, not real ones.
+# Invented products: (code, name, selling price, unit cost, COD price).
+# The selling price is the normal Prepaid price. COD orders have their
+# own normal price. All are made-up round numbers, not real ones.
 PRODUCTS = [
-    ("CXE", "Cream", 500, 200),
-    ("FW", "Facewash", 300, 120),
-    ("BL", "Body lotion", 400, 160),
-    ("LP", "Lip balm", 150, 60),
-    ("SS", "Sunscreen", 450, 180),
-    ("SERUM", "Serum", 600, 240),
-    ("KOJIGLOW", "Kojiglow", 350, 140),
-    ("MOISTURIZER", "Moisturizer", 400, 160),
+    ("CXE", "Cream", 500, 200, 600),
+    ("FW", "Facewash", 300, 120, 350),
+    ("BL", "Body lotion", 400, 160, 450),
+    ("LP", "Lip balm", 150, 60, 200),
+    ("SS", "Sunscreen", 450, 180, 500),
+    ("SERUM", "Serum", 600, 240, 700),
+    ("KOJIGLOW", "Kojiglow", 350, 140, 400),
+    ("MOISTURIZER", "Moisturizer", 400, 160, 450),
 ]
+COD_PRICES = {code: cod_price for code, _name, _price, _cost, cod_price in PRODUCTS}
 
 # Made-up Shopify product titles (Shopify has no SKUs, so titles are mapped).
 SHOPIFY_TITLES = {
@@ -181,14 +183,14 @@ def build_products():
     """One row per product."""
     return pd.DataFrame(
         PRODUCTS,
-        columns=["product_code", "product_name", "selling_price", "unit_cost"],
+        columns=["product_code", "product_name", "selling_price", "unit_cost", "cod_price"],
     )
 
 
 def build_product_aliases():
     """Every way a product is written, mapped to one product_code."""
     rows = []
-    for code, _name, _price, _cost in PRODUCTS:
+    for code, _name, _price, _cost, _cod_price in PRODUCTS:
         # In WhatsApp the product is written as its code, in any letter case.
         rows.append({"alias": code.lower(), "source": "whatsapp", "product_code": code})
         # In Shopify the product is written as a full title.
@@ -246,7 +248,7 @@ def pick_items(rng):
     chosen = rng.choice(len(PRODUCTS), size=item_count, replace=False, p=PRODUCT_CHANCES)
     items = []
     for index in chosen:
-        code, _name, price, _cost = PRODUCTS[index]
+        code, _name, price, _cost, _cod_price = PRODUCTS[index]
         quantity = 2 if rng.random() < QUANTITY_TWO_CHANCE else 1
         items.append((code, quantity, price))
     return items
@@ -313,6 +315,11 @@ def build_orders_and_items(rng, customers):
             if rng.random() < MISSING_DISTRICT_CHANCE:
                 order_district = None
                 flags.append("missing_district")
+
+            # WhatsApp COD orders are charged the COD price. Shopify orders
+            # keep the normal price.
+            if channel == "whatsapp" and payment_type == "cod":
+                order_items = [(code, quantity, COD_PRICES[code]) for code, quantity, _price in order_items]
 
             # Work out the amount and say honestly what kind of amount it is.
             if amount_known:

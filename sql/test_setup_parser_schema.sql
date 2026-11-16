@@ -25,7 +25,7 @@ SET search_path TO parser_test;
 \ir 01_create_tables.sql
 
 -- The products are needed, because order_items must point to them.
-\copy products (product_code, product_name, selling_price, unit_cost) FROM 'data/synthetic/synthetic_products.csv' WITH (FORMAT csv, HEADER true)
+\copy products (product_code, product_name, selling_price, unit_cost, cod_price) FROM 'data/synthetic/synthetic_products.csv' WITH (FORMAT csv, HEADER true)
 
 SELECT count(*) AS tables_in_parser_test
 FROM information_schema.tables

@@ -24,8 +24,9 @@ BEGIN;
 CREATE TABLE products (
     product_code   text PRIMARY KEY,               -- for example 'CXE'
     product_name   text NOT NULL,                  -- for example 'Cream'
-    selling_price  numeric(10, 2) CHECK (selling_price >= 0),
+    selling_price  numeric(10, 2) CHECK (selling_price >= 0),  -- normal Prepaid price
     unit_cost      numeric(10, 2) CHECK (unit_cost >= 0),
+    cod_price      numeric(10, 2) CHECK (cod_price >= 0),      -- normal COD price
     CHECK (product_code = upper(product_code))     -- codes are stored in capitals
 );
 

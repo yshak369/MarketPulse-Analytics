@@ -57,24 +57,45 @@ This is the same file the synthetic database uses, so both databases have the sa
 `reference\products.csv` has one row per product. It has the same layout as `data/synthetic/synthetic_products.csv`:
 
 ```
-product_code,product_name,selling_price,unit_cost
-ABC,Example cream,100,40
+product_code,product_name,selling_price,unit_cost,cod_price
+ABC,Example cream,100,40,120
 ```
 
 - Write product codes in CAPITALS.
+- `selling_price` is the normal **Prepaid** price. `cod_price` is the normal **COD** price.
 - A price or cost you do not know can stay empty. Estimates that need it then stay unknown.
 
 Load the file once:
 
 ```
-psql -U marketpulse_user -d marketpulse_private -h localhost -c "\copy products (product_code, product_name, selling_price, unit_cost) FROM 'D:/Private/MarketPulse-Data/reference/products.csv' WITH (FORMAT csv, HEADER true)"
+psql -U marketpulse_user -d marketpulse_private -h localhost -c "\copy products (product_code, product_name, selling_price, unit_cost, cod_price) FROM 'D:/Private/MarketPulse-Data/reference/products.csv' WITH (FORMAT csv, HEADER true)"
 ```
 
 To add a product later, add it to the file as your record, and add the one row to the table in pgAdmin (Query Tool on `marketpulse_private`):
 
 ```sql
-INSERT INTO products (product_code, product_name, selling_price, unit_cost)
-VALUES ('XYZ', 'Example serum', 200, 80);
+INSERT INTO products (product_code, product_name, selling_price, unit_cost, cod_price)
+VALUES ('XYZ', 'Example serum', 200, 80, 240);
+```
+
+### 3.3a Adding the COD price to a database built before November 2026
+
+A database created before November 2026 has no `cod_price` column. Add it once:
+
+```
+psql -U marketpulse_user -d marketpulse_private -h localhost -f sql/06_add_cod_price.sql
+```
+
+It is safe to run again. Then add the `cod_price` column to `reference\products.csv`, and fill the prices in pgAdmin, one line per product (made-up values):
+
+```sql
+UPDATE products SET cod_price = 120 WHERE product_code = 'ABC';
+```
+
+Check that every product has one:
+
+```sql
+SELECT product_code FROM products WHERE cod_price IS NULL;
 ```
 
 ### 3.4 Alias file

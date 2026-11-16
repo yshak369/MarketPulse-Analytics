@@ -1,9 +1,9 @@
-product_code,product_name,selling_price,unit_cost
-CXE,Cream,500,200
-FW,Facewash,300,120
-BL,Body lotion,400,160
-LP,Lip balm,150,60
-SS,Sunscreen,450,180
-SERUM,Serum,600,240
-KOJIGLOW,Kojiglow,350,140
-MOISTURIZER,Moisturizer,400,160
+product_code,product_name,selling_price,unit_cost,cod_price
+CXE,Cream,500,200,600
+FW,Facewash,300,120,350
+BL,Body lotion,400,160,450
+LP,Lip balm,150,60,200
+SS,Sunscreen,450,180,500
+SERUM,Serum,600,240,700
+KOJIGLOW,Kojiglow,350,140,400
+MOISTURIZER,Moisturizer,400,160,450

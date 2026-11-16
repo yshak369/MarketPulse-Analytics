@@ -29,7 +29,7 @@ Tuned values would leak confidential figures, such as the real COD share, ad spe
 
 | Table | Plan |
 |---|---|
-| `products` | The same 8 product codes, with made-up prices and costs |
+| `products` | The same 8 product codes, with made-up Prepaid prices, COD prices and costs. WhatsApp COD lines use the COD price |
 | `product_aliases` | Each product code as written in WhatsApp, and a made-up Shopify product title |
 | `customers` | About 2,000 customers named `Synthetic Customer 0001`, `Synthetic Customer 0002` and so on. Phone left empty, so no number can belong to a real person |
 | `orders` | About 3,000 orders over the made-up year. Real Indian state and district names from a public list. Address and PIN code left empty |
