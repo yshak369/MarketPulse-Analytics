@@ -178,7 +178,7 @@ One row per shipment. Most of this table will be empty until courier records are
 5. **Unknown stays unknown.** Empty values are left empty. They are not filled with guesses.
 6. **Estimates are labelled.** Any estimated amount has `amount_basis = 'estimated'`.
 7. **Flag, do not guess.** Unknown products and unclear fields go to manual review.
-8. **Keep only useful Shopify columns.** About 20 of the roughly 70 export columns are kept. The exact headings are checked when the import code is written.
+8. **Keep only useful Shopify columns.** The orders export has 79 columns (as of November 2026), and 20 of them are used. `python/prepare_shopify_orders.py` checks that these 20 exist and stops if one is missing.
 
 ## 6. Public version
 
@@ -191,4 +191,3 @@ One row per shipment. Most of this table will be empty until courier records are
 
 1. **COD amounts:** one amount per product line is assumed (see `whatsapp_parser_plan.md`).
 2. **Shipment records:** which courier reports are available to fill `shipments`.
-3. **Shopify headings:** exact column names, to be read from the real export file locally.

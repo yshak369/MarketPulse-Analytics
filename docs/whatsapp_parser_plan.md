@@ -109,6 +109,8 @@ How the owner builds the real file:
 
 Upper and lower case are treated as the same (`cxe` = `CXE`). An unknown name is never matched to the nearest product.
 
+One spelling can mean only one product. If the file lists a spelling with two different product codes, the parser stops and names the spelling. A row with an alias but no code, or a code but no alias, also stops it. A completely empty row is skipped.
+
 Product line formats:
 
 - Prepaid: `1 cxe` means quantity 1, product CXE, no amount.
@@ -179,7 +181,7 @@ India Post publishes a public list that maps each PIN code to its district and s
 
 - A PIN code in the file uses the owner's district and state, even when the official list has a different one.
 - The order gets the note `pin_code_override`, so it is always visible where the value came from.
-- The file must be exact. A bad PIN code, an empty district or state, or the same PIN code with two places stops the script.
+- The file must be exact. A bad PIN code, an empty district or state, or the same PIN code with two places stops the script. A completely empty row is skipped.
 - Names not used in the official list are printed as a spelling warning.
 - The Shopify script takes the same file, so both channels use the same districts.
 - The real file is private. `data/synthetic/synthetic_pin_code_overrides.csv` is a fake one for tests.
@@ -270,4 +272,4 @@ Until other private sources are added (for example Delhivery COD remittance repo
 
 1. **COD amounts:** assumed to be one amount per product, like `1 CXE(900),1 LP(250)`. To be confirmed that it is never one amount for the whole order.
 2. **Revenue sources:** which private records can confirm delivery and payment.
-3. **PIN code list:** the exact official source and licence, to be recorded before download.
+3. **PIN code list:** the source and the licence name are recorded in `dataset_sources.md`. The exact credit line that the licence requires is still to be recorded.

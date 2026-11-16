@@ -288,15 +288,53 @@ def classify(message, ignore_phones=frozenset()):
     return "other"
 
 
+def read_owner_file(path, columns, label):
+    """Read a small file that the owner writes by hand.
+
+    Returns a list of (row number, row). Each row is a dictionary with
+    only the wanted columns, with the spaces around each value removed.
+
+    The script stops if a wanted column is missing. A completely empty
+    row is skipped, because spreadsheet programs can leave these behind.
+    The row number is the line in the file, so the row is easy to find.
+    """
+    rows = []
+    with open(path, encoding="utf-8-sig", newline="") as owner_file:
+        reader = csv.reader(owner_file)
+        header = [name.strip() for name in next(reader, [])]
+        missing = [name for name in columns if name not in header]
+        if missing:
+            raise SystemExit(f"The {label} file is missing these columns: " + ", ".join(missing))
+        for cells in reader:
+            if not any(cell.strip() for cell in cells):
+                continue
+            row = dict(zip(header, (cell.strip() for cell in cells)))
+            rows.append((reader.line_num, {name: row.get(name, "") for name in columns}))
+    return rows
+
+
 def read_aliases(path):
     """Read the alias file: every way a product is written -> its product code.
 
-    The file has the columns alias, source, product_code.
+    The file has the columns alias, source, product_code. Only alias and
+    product_code are used here.
+
+    One spelling can mean only one product. If a spelling is listed with
+    two different product codes, the script stops. It never chooses
+    between them.
     """
     aliases = {}
-    with open(path, encoding="utf-8-sig", newline="") as alias_file:
-        for row in csv.DictReader(alias_file):
-            aliases[normalise_product_name(row["alias"])] = row["product_code"].strip().upper()
+    for row_number, row in read_owner_file(path, ("alias", "product_code"), "alias"):
+        alias = normalise_product_name(row["alias"])
+        product_code = row["product_code"].upper()
+        if not alias or not product_code:
+            raise SystemExit(f"Alias file, row {row_number}: alias and product_code must both be filled.")
+        if aliases.get(alias, product_code) != product_code:
+            raise SystemExit(
+                f"Alias file, row {row_number}: '{alias}' is already listed with the product code "
+                f"{aliases[alias]}, and here with {product_code}. One spelling can mean only one product."
+            )
+        aliases[alias] = product_code
     return aliases
 
 
@@ -523,26 +561,21 @@ def read_pin_code_overrides(path):
 
     The official list cannot decide some PIN codes. For those, the
     owner may write the correct district and state in this file. It is
-    a decision made by a person, so the file must be exact: any unclear
-    row stops the script instead of being skipped or guessed.
+    a decision made by a person, so the file must be exact: an unclear
+    row stops the script. It is never skipped or guessed.
     """
     overrides = {}
-    with open(path, encoding="utf-8-sig", newline="") as override_file:
-        reader = csv.DictReader(override_file)
-        missing = [name for name in ("pin_code", "district", "state") if name not in (reader.fieldnames or [])]
-        if missing:
-            raise SystemExit("The override file is missing these columns: " + ", ".join(missing))
-        for row_number, row in enumerate(reader, start=2):
-            pin_code = re.sub(r"\s", "", row["pin_code"] or "")
-            place = ((row["district"] or "").strip(), (row["state"] or "").strip())
-            if not PIN_CODE.match(pin_code):
-                raise SystemExit(f"Override file, row {row_number}: '{pin_code}' is not a 6-digit PIN code.")
-            if not place[0] or not place[1]:
-                raise SystemExit(f"Override file, row {row_number}: district and state must both be filled.")
-            if overrides.get(pin_code, place) != place:
-                raise SystemExit(f"Override file, row {row_number}: PIN code {pin_code} appears twice "
-                                 "with different places.")
-            overrides[pin_code] = place
+    for row_number, row in read_owner_file(path, ("pin_code", "district", "state"), "override"):
+        pin_code = re.sub(r"\s", "", row["pin_code"])
+        place = (row["district"], row["state"])
+        if not PIN_CODE.match(pin_code):
+            raise SystemExit(f"Override file, row {row_number}: '{pin_code}' is not a 6-digit PIN code.")
+        if not place[0] or not place[1]:
+            raise SystemExit(f"Override file, row {row_number}: district and state must both be filled.")
+        if overrides.get(pin_code, place) != place:
+            raise SystemExit(f"Override file, row {row_number}: PIN code {pin_code} appears twice "
+                             "with different places.")
+        overrides[pin_code] = place
     return overrides
 
 

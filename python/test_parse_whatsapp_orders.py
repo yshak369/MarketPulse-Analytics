@@ -334,6 +334,53 @@ class PinCodeLookupTest(unittest.TestCase):
         self.assertEqual(orders["Test Buyer Six"].district_city, "")
 
 
+class AliasFileTest(unittest.TestCase):
+    """The owner's alias file: one spelling can mean only one product."""
+
+    HEADER = "alias,source,product_code\n"
+
+    def read_text(self, text):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "aliases.csv"
+            path.write_text(text, encoding="utf-8")
+            return parser.read_aliases(path)
+
+    def test_fake_file_is_read(self):
+        aliases = parser.read_aliases(SYNTHETIC / "synthetic_product_aliases.csv")
+        self.assertEqual(len(aliases), 16)
+        self.assertEqual((aliases["cxe"], aliases["synthetic glow cream 50g"]), ("CXE", "CXE"))
+
+    def test_letter_case_and_spaces_do_not_matter(self):
+        aliases = self.read_text(self.HEADER + "  Body   Lotion ,whatsapp, bl \n")
+        self.assertEqual(aliases, {"body lotion": "BL"})
+
+    def test_same_spelling_twice_with_the_same_code_is_fine(self):
+        aliases = self.read_text(self.HEADER + "cream,whatsapp,CXE\nCream,shopify,cxe\n")
+        self.assertEqual(aliases, {"cream": "CXE"})
+
+    def test_one_spelling_with_two_codes_stops_and_is_named(self):
+        text = self.HEADER + "cream,whatsapp,CXE\nfw,whatsapp,FW\nCREAM,shopify,MOISTURIZER\n"
+        with self.assertRaisesRegex(SystemExit, "row 4: 'cream' .* CXE, and here with MOISTURIZER"):
+            self.read_text(text)
+
+    def test_half_filled_row_stops(self):
+        for row in ("cream,whatsapp,", ",whatsapp,CXE", ",whatsapp,"):
+            with self.assertRaisesRegex(SystemExit, "row 2: alias and product_code must both be filled"):
+                self.read_text(self.HEADER + row + "\n")
+
+    def test_empty_rows_are_skipped_and_row_numbers_stay_right(self):
+        self.assertEqual(self.read_text(self.HEADER + "cxe,whatsapp,CXE\n,,\n\n"), {"cxe": "CXE"})
+        # Line 3 is ",," and line 4 is blank, so the clash is on line 6.
+        with self.assertRaisesRegex(SystemExit, "row 6: 'cxe'"):
+            self.read_text(self.HEADER + "cxe,whatsapp,CXE\n,,\n\nfw,whatsapp,FW\ncxe,whatsapp,FW\n")
+
+    def test_missing_column_stops(self):
+        with self.assertRaisesRegex(SystemExit, "alias file is missing these columns: product_code"):
+            self.read_text("alias,source\ncxe,whatsapp\n")
+        with self.assertRaisesRegex(SystemExit, "alias file is missing these columns: alias, product_code"):
+            self.read_text("")
+
+
 class PinCodeOverrideTest(unittest.TestCase):
     """The owner's own file for PIN codes the official list cannot decide."""
 
@@ -402,6 +449,14 @@ class PinCodeOverrideTest(unittest.TestCase):
     def test_same_row_twice_and_spaces_are_fine(self):
         overrides = self.read_text("pin_code,district,state\n600 001, Chennai ,Tamil Nadu\n600001,Chennai,Tamil Nadu\n")
         self.assertEqual(overrides, {"600001": ("Chennai", "Tamil Nadu")})
+
+    def test_empty_rows_are_skipped_and_row_numbers_stay_right(self):
+        header = "pin_code,district,state\n"
+        self.assertEqual(self.read_text(header + "600001,Chennai,Tamil Nadu\n,,\n\n"),
+                         {"600001": ("Chennai", "Tamil Nadu")})
+        # Line 3 is ",," and line 4 is blank, so the bad PIN code is on line 5.
+        with self.assertRaisesRegex(SystemExit, "row 5: '12345' is not a 6-digit"):
+            self.read_text(header + "600001,Chennai,Tamil Nadu\n,,\n\n12345,Chennai,Tamil Nadu\n")
 
     def test_names_not_in_the_list_are_reported(self):
         self.assertEqual(parser.override_names_not_in_list(self.pin_codes, self.overrides),

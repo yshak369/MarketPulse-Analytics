@@ -90,6 +90,7 @@ example cream 50g,shopify,ABC
 - `alias` is the name as written in WhatsApp, or the product title in Shopify. Letter case and extra spaces do not matter.
 - `source` is `whatsapp` or `shopify`.
 - A name that is not in the file is flagged. It is never matched to a similar name.
+- One spelling can have only one product code. If a spelling is listed with two different codes, the scripts stop and name it.
 - Every `product_code` must also be in the `products` table. If not, its orders are skipped when loading.
 
 ### 3.5 Ignore list
@@ -235,6 +236,7 @@ SELECT (SELECT count(*) FROM customers)      AS customers,
 |---|---|---|
 | `Refusing to write output to ...` | The output folder is inside the project, where Git could pick it up | Use a folder under `D:\Private\MarketPulse-Data\output\` |
 | `The export is missing these columns: ...` | The export was made without those columns | Add the columns in the export and download it again |
+| `Alias file, row N: ...` | A row in the alias file is half empty, or one spelling has two product codes | Fix that row. The message says what is wrong |
 | `Override file, row N: ...` | A row in the override file is unclear | Fix that row. The message says what is wrong |
 | `Stopped: ...` | The script would have to guess | Read the message. It names the problem |
 | A skipped order with `product_not_in_products_table` | A code in the alias file is not in the `products` table | Add the product (section 3.3), or correct the code in the alias file |
