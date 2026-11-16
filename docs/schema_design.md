@@ -1,6 +1,6 @@
 # Database Schema Design
 
-Status: approved design. No database has been created yet.
+Status: approved design, built in Phase 2. The tables are created by `sql/01_create_tables.sql`.
 
 All examples in this document are fake. No real customer data, spend figures or campaign names appear here.
 

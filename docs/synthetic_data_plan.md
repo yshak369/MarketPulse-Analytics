@@ -1,6 +1,6 @@
 # Synthetic Data Plan
 
-Status: approved plan. No data has been generated yet.
+Status: approved plan. The data was generated in Phase 2 and is in `data/synthetic/`.
 
 This file explains how the fake data for the public portfolio will be made.
 
@@ -20,7 +20,7 @@ Tuned values would leak confidential figures, such as the real COD share, ad spe
 
 ## 3. How the data is made
 
-- One Python script, planned as `python/generate_synthetic_data.py`, using NumPy and Pandas. It will be written in a later phase.
+- One Python script, `python/generate_synthetic_data.py`, using NumPy and Pandas.
 - The script uses a **fixed random seed**. The "random" numbers come out the same on every run, so anyone can rebuild exactly the same dataset.
 - It fills the same eight tables as the approved schema (see `schema_design.md`).
 - Output goes to `data/synthetic/`. This folder is tracked by Git, unlike `data/raw` and `data/processed`. The files are expected to be under 1 MB in total.
