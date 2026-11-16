@@ -189,5 +189,6 @@ One row per shipment. Most of this table will be empty until courier records are
 
 ## 7. Still to confirm
 
-1. **COD amounts:** one amount per product line is assumed (see `whatsapp_parser_plan.md`).
+1. **COD amounts:** a bracket usually belongs to one product line, but sometimes holds the total for a whole order. How to settle such orders is still to be decided (see `whatsapp_parser_plan.md`, section 14).
 2. **Shipment records:** which courier reports are available to fill `shipments`.
+3. **Two normal prices:** a product has one normal price for COD and another for Prepaid. The `products` table holds one `selling_price` today. How to store both is to be decided in Phase 3.

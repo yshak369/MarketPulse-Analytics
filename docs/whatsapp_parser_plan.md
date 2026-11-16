@@ -26,7 +26,9 @@ The parser runs only on the owner's computer. It uses plain Python. It does not 
 | Multiple products | Separated by commas |
 | `/-` after a product | A writing habit with no meaning. It is ignored |
 | No product line | Very common. It means 1 cream (CXE) |
-| COD amount | Written in brackets after each product. It is the total for that product line, not the price per unit |
+| COD amount | Written in brackets after a product. It is usually the total for that product line, not the price per unit. Sometimes an order with several products has only one bracket, which holds the total for the whole order |
+| COD product without brackets | No amount was written. The owner's rule: the product can be taken at its normal COD price. That value is an estimate and is labelled as one |
+| Normal prices | A product has one normal price for COD and a different one for Prepaid |
 | Shipping and discounts | Not included in the collectible amount |
 | Prepaid amount | Not recorded in WhatsApp |
 | Delivery, returns, money received | Not marked in WhatsApp |
@@ -249,7 +251,7 @@ The original message text is written only to the review queue file, and only for
 | `product_code` | `CXE` | From the alias file. Stored in capitals. Empty when the name is unknown |
 | `raw_name` | `cxe` | The name as written, in lower case |
 | `quantity` | `1` | Whole number |
-| `cod_collectible_amount` | `900` | COD only. Total for the line. Empty for prepaid |
+| `cod_collectible_amount` | `900` | COD only. The amount written in brackets after this product. Usually the total for the line. In an order where only some products have a bracket, it can be the total for the whole order, so that order is flagged. Empty for prepaid |
 | `product_defaulted` | `true` | True when the order had no product line |
 
 **Important:** `cod_collectible_amount` is the amount to be collected. It is not confirmed revenue.
@@ -276,6 +278,6 @@ Until other private sources are added (for example Delhivery COD remittance repo
 
 ## 14. Still to confirm
 
-1. **COD amounts:** assumed to be one amount per product, like `1 CXE(900),1 LP(250)`. To be confirmed that it is never one amount for the whole order.
+1. **COD amounts:** confirmed by the owner on 16 November 2026: a bracket usually belongs to its own product, but an order with several products sometimes has one bracket for the whole order. The parser cannot tell these two cases apart. So an order where only some products have a bracket keeps an unknown amount and is flagged. Still to decide: a rule or a manual step to settle these orders.
 2. **Revenue sources:** which private records can confirm delivery and payment.
 3. **PIN code list:** the source and the licence name are recorded in `dataset_sources.md`. The exact credit line that the licence requires is still to be recorded.
