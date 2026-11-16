@@ -7,3 +7,6 @@ numpy==2.2.6
 # SQLAlchemy is the connection library. psycopg2 is the PostgreSQL driver.
 SQLAlchemy==2.0.57
 psycopg2-binary==2.9.13
+
+# Charts for the exploratory data analysis (Phase 4).
+matplotlib==3.10.8
