@@ -16,6 +16,8 @@ import unittest
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 import clean_data
 import database
@@ -333,6 +335,66 @@ class SyntheticDatabaseTest(unittest.TestCase):
         for name, table in self.result.items():
             with self.subTest(table=name):
                 self.assertFalse(set(clean_data.PERSONAL_COLUMNS) & set(table.columns))
+
+
+class SchemaGuardTest(unittest.TestCase):
+    def test_allowed_targets(self):
+        clean_data.check_schemas("public", "clean")
+        clean_data.check_schemas("parser_test", "parser_test_clean")
+
+    def test_refused_targets(self):
+        for source, target in [("public", "public"), ("public", "parser_test"), ("clean", "clean"),
+                               ("public", "Clean"), ("public", "clean; drop table orders"), ("public", "")]:
+            with self.subTest(target=target):
+                with self.assertRaises(SystemExit):
+                    clean_data.check_schemas(source, target)
+
+
+class WriteCleanSchemaTest(unittest.TestCase):
+    """Writes to a throw-away schema in the synthetic database, then deletes it."""
+
+    TARGET = "unittest_clean"
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.engine = database.connect(database.SYNTHETIC_DATABASE, read_only=False, ask_password=False)
+        except database.ConnectionProblem as problem:
+            raise unittest.SkipTest(f"the synthetic database is not available here: {problem}")
+        cls.tables = clean_data.clean_all(database.read_tables(cls.engine))
+        cls.counts = clean_data.write_clean_tables(cls.engine, cls.tables, cls.TARGET)
+
+    @classmethod
+    def tearDownClass(cls):
+        with cls.engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA IF EXISTS "{cls.TARGET}" CASCADE'))
+        cls.engine.dispose()
+
+    def count(self, table):
+        with self.engine.connect() as connection:
+            return connection.execute(text(f'SELECT count(*) FROM "{self.TARGET}"."{table}"')).scalar()
+
+    def test_every_table_is_written_in_full(self):
+        for name in clean_data.WRITE_ORDER:
+            with self.subTest(table=name):
+                self.assertEqual(self.count(name), len(self.tables[name]))
+
+    def test_no_personal_column_in_the_database(self):
+        with self.engine.connect() as connection:
+            found = connection.execute(text(
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = :schema "
+                "AND column_name IN ('customer_name', 'phone', 'address', 'pin_code', 'notes')"),
+                {"schema": self.TARGET}).scalar()
+        self.assertEqual(found, 0)
+
+    def test_a_failed_run_changes_nothing(self):
+        broken = {name: table.copy() for name, table in self.tables.items()}
+        broken["orders"].loc[0, "exclusion_reason"] = "made-up reason"   # counted AND excluded: a CHECK rule refuses it
+        broken["orders"].loc[0, "include_in_analysis"] = True
+        with self.assertRaises(IntegrityError):
+            clean_data.write_clean_tables(self.engine, broken, self.TARGET)
+        # The schema from setUpClass is still there, complete.
+        self.assertEqual(self.count("orders"), len(self.tables["orders"]))
 
 
 if __name__ == "__main__":

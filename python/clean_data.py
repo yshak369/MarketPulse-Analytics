@@ -48,8 +48,25 @@ The rules (approved by the owner, November 2026; see docs/data_cleaning.md):
       the estimate. value_basis says which: recorded, estimated or unknown.
 """
 
+import argparse
+import re
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from audit_data_quality import audit
+from database import ConnectionProblem, connect, kind_of_data, read_tables
+
+CLEAN_TABLES_SQL = Path(__file__).resolve().parent.parent / "sql" / "07_create_clean_tables.sql"
+
+# Tables in the order they are written: a table after the tables it points to.
+WRITE_ORDER = ["products", "customers", "orders", "order_items", "shipments", "ad_campaigns", "ad_performance"]
+
+# A schema name: lower-case letters, digits and "_", starting with a letter.
+SCHEMA_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # Columns that identify a person, or can (notes). Never in clean tables.
 PERSONAL_COLUMNS = ["customer_name", "phone", "address", "pin_code", "notes"]
@@ -305,3 +322,109 @@ def clean_all(tables):
         "ad_campaigns": tables["ad_campaigns"].copy(),
         "ad_performance": clean_ad_performance(tables["ad_performance"], tables["ad_campaigns"]),
     }
+
+
+# ---------------------------------------------------------------------
+# Writing the clean schema
+# ---------------------------------------------------------------------
+
+def check_schemas(source, target):
+    """Refuse any target that could hold raw data.
+
+    The target is deleted and rebuilt on every run. So it must be named
+    "clean" or end in "_clean", and it can never be the source schema.
+    """
+    for name in (source, target):
+        if not SCHEMA_NAME.match(name):
+            raise SystemExit(f"'{name}' is not a valid schema name: use lower-case letters, digits and _.")
+    if target != "clean" and not target.endswith("_clean"):
+        raise SystemExit(f"Refusing to write to schema '{target}': the target must be 'clean' or end in '_clean'.")
+    if target == source:
+        raise SystemExit("The target schema must be different from the source schema.")
+
+
+def write_clean_tables(engine, tables, target):
+    """Replace the target schema with the clean tables, in ONE transaction.
+
+    1. delete the old target schema and create it again, empty
+    2. create the tables with sql/07_create_clean_tables.sql
+    3. fill them, in WRITE_ORDER
+    4. count the rows in the database and compare them with the tables
+
+    If any step fails, the transaction is rolled back: the old target
+    schema stays exactly as it was. Returns the row counts.
+    """
+    create_tables = CLEAN_TABLES_SQL.read_text(encoding="utf-8")
+    with engine.begin() as connection:   # COMMIT at the end, ROLLBACK on any error
+        connection.execute(text(f'DROP SCHEMA IF EXISTS "{target}" CASCADE'))
+        connection.execute(text(f'CREATE SCHEMA "{target}"'))
+        connection.execute(text(f'SET LOCAL search_path TO "{target}"'))
+        connection.exec_driver_sql(create_tables)
+        for name in WRITE_ORDER:
+            tables[name].to_sql(name, connection, schema=target, if_exists="append", index=False, chunksize=1000)
+        counts = {}
+        for name in WRITE_ORDER:
+            counts[name] = connection.execute(text(f'SELECT count(*) FROM "{target}"."{name}"')).scalar()
+            if counts[name] != len(tables[name]):
+                raise RuntimeError(f"{name}: {counts[name]} rows in the database, {len(tables[name])} cleaned")
+    return counts
+
+
+def print_summary(tables, counts, target):
+    orders = tables["orders"]
+    counted = orders["include_in_analysis"]
+    print(f"\nwritten to schema '{target}' (one transaction):")
+    for name, count in counts.items():
+        print(f"  {name:<16} {count:>7} rows")
+    print(f"orders counted:     {int(counted.sum()):>7}")
+    for reason, count in orders["exclusion_reason"].value_counts().items():
+        print(f"  not counted, {reason}: {count}")
+    print("order value basis (counted orders):")
+    for basis, count in orders.loc[counted, "value_basis"].value_counts().items():
+        print(f"  {basis:<10} {count:>7}")
+
+
+def main():
+    arguments = argparse.ArgumentParser(description="Clean the raw tables into the clean schema.")
+    arguments.add_argument("--database", required=True, help="for example marketpulse_synthetic")
+    arguments.add_argument("--source-schema", default="public", help="schema with the raw tables (default: public)")
+    arguments.add_argument("--target-schema", default="clean", help="schema to rebuild (default: clean)")
+    options = arguments.parse_args()
+    check_schemas(options.source_schema, options.target_schema)
+
+    # One connection that may write, so the password is asked only once.
+    # Writing is limited to the target schema by check_schemas.
+    try:
+        engine = connect(options.database, read_only=False)
+    except ConnectionProblem as problem:
+        raise SystemExit(str(problem))
+
+    try:
+        print(f"cleaning {options.database}: {options.source_schema} -> {options.target_schema}")
+        print(f"  {kind_of_data(options.database)}")
+        try:
+            raw = read_tables(engine, options.source_schema)
+        except ValueError as problem:
+            raise SystemExit(f"Could not read schema '{options.source_schema}': {problem}")
+        if "cod_price" not in raw["products"].columns:
+            raise SystemExit("The products table has no cod_price column yet. "
+                             "Run sql/06_add_cod_price.sql first (see docs/private_setup_guide.md, section 3.3a).")
+
+        report = audit(raw)
+        print(f"audit: {int((report['rows_found'] > 0).sum())} of {len(report)} checks found something "
+              "(details: python/audit_data_quality.py)")
+
+        tables = clean_all(raw)
+        try:
+            counts = write_clean_tables(engine, tables, options.target_schema)
+        except (SQLAlchemyError, RuntimeError) as problem:
+            # Only the first line: a database error can quote row values.
+            first_line = str(getattr(problem, "orig", problem)).strip().split("\n")[0]
+            raise SystemExit(f"Nothing was written (rolled back): {first_line}")
+        print_summary(tables, counts, options.target_schema)
+    finally:
+        engine.dispose()
+
+
+if __name__ == "__main__":
+    main()
