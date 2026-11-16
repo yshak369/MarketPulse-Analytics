@@ -14,6 +14,8 @@ What this version does:
           review, and write the output files.
   Part 4. Fill in district and state from the PIN code, using a PIN
           code list (columns: pin_code, district, state).
+  Part 5. Optional: use the owner's own override file for PIN codes
+          the list cannot decide (--pin-code-overrides, same columns).
 
 How to run on the fake test chats (from the project folder):
     python python/parse_whatsapp_orders.py --prepaid data/synthetic/synthetic_whatsapp_chat_prepaid.txt --cod data/synthetic/synthetic_whatsapp_chat_cod.txt --ignore-phones data/synthetic/synthetic_ignore_phones.txt --aliases data/synthetic/synthetic_product_aliases.csv --pin-codes data/synthetic/synthetic_pin_code_sample.csv --output data/processed/whatsapp_test_output
@@ -93,6 +95,9 @@ PRODUCT_PART = re.compile(
 # Owner's business rule: an order with no product line is 1 cream.
 DEFAULT_PRODUCT_CODE = "CXE"
 DEFAULT_PRODUCT_NOTE = "product_defaulted_to_cxe"
+
+# Note on an order whose district and state come from the owner's override file.
+OVERRIDE_NOTE = "pin_code_override"
 
 # ---------------------------------------------------------------------
 # Validation settings. The owner can change these in one place.
@@ -513,18 +518,65 @@ def read_pin_codes(path):
     return pin_codes
 
 
-def fill_district_and_state(orders, pin_codes):
+def read_pin_code_overrides(path):
+    """Read the owner's override file: pin_code -> (district, state).
+
+    The official list cannot decide some PIN codes. For those, the
+    owner may write the correct district and state in this file. It is
+    a decision made by a person, so the file must be exact: any unclear
+    row stops the script instead of being skipped or guessed.
+    """
+    overrides = {}
+    with open(path, encoding="utf-8-sig", newline="") as override_file:
+        reader = csv.DictReader(override_file)
+        missing = [name for name in ("pin_code", "district", "state") if name not in (reader.fieldnames or [])]
+        if missing:
+            raise SystemExit("The override file is missing these columns: " + ", ".join(missing))
+        for row_number, row in enumerate(reader, start=2):
+            pin_code = re.sub(r"\s", "", row["pin_code"] or "")
+            place = ((row["district"] or "").strip(), (row["state"] or "").strip())
+            if not PIN_CODE.match(pin_code):
+                raise SystemExit(f"Override file, row {row_number}: '{pin_code}' is not a 6-digit PIN code.")
+            if not place[0] or not place[1]:
+                raise SystemExit(f"Override file, row {row_number}: district and state must both be filled.")
+            if overrides.get(pin_code, place) != place:
+                raise SystemExit(f"Override file, row {row_number}: PIN code {pin_code} appears twice "
+                                 "with different places.")
+            overrides[pin_code] = place
+    return overrides
+
+
+def override_names_not_in_list(pin_codes, overrides):
+    """District and state names in the override file that the PIN code list never uses.
+
+    Such a name is often a typing mistake or a different spelling
+    ("Chennai" and "CHENNAI" would count as two districts later).
+    """
+    districts = {place[0] for place in pin_codes.values() if place}
+    states = {place[1] for place in pin_codes.values() if place}
+    unknown = {district for district, _ in overrides.values() if district not in districts}
+    unknown |= {state for _, state in overrides.values() if state not in states}
+    return sorted(unknown)
+
+
+def fill_district_and_state(orders, pin_codes, overrides=None):
     """Fill district and state from the PIN code list.
 
     Only an order with exactly one PIN code is looked up. A PIN code
     that is not in the list, or that maps to more than one place, is
     flagged and the fields stay empty.
+
+    A PIN code in the owner's override file uses that place instead,
+    and the order gets the note "pin_code_override".
     """
     for order in orders:
         if len(order.pin_codes) != 1:
             continue   # missing or several PIN codes: already flagged
         pin_code = order.pin_codes[0]
-        if pin_code not in pin_codes:
+        if overrides and pin_code in overrides:
+            order.district_city, order.state = overrides[pin_code]
+            order.notes.append(OVERRIDE_NOTE)
+        elif pin_code not in pin_codes:
             order.flags.append("pin_code_not_found")
         elif pin_codes[pin_code] is None:
             order.flags.append("pin_code_ambiguous")
@@ -536,16 +588,17 @@ def fill_district_and_state(orders, pin_codes):
                 order.flags.append("pin_code_ambiguous")
 
 
-def validate_orders(orders, pin_codes=None):
+def validate_orders(orders, pin_codes=None, overrides=None):
     """Validate all orders together and give each one a random ID.
 
     pin_codes is the PIN code list from read_pin_codes. Without it,
     district and state stay empty and no PIN code is looked up.
+    overrides is the owner's file from read_pin_code_overrides.
     """
     for order in orders:
         validate_order(order)
     if pin_codes is not None:
-        fill_district_and_state(orders, pin_codes)
+        fill_district_and_state(orders, pin_codes, overrides)
     flag_possible_duplicates(orders)
 
     # Random IDs: never made from a phone number or a name.
@@ -671,12 +724,16 @@ def main():
     arguments.add_argument("--ignore-phones", help="file with phone numbers to ignore, one per line")
     arguments.add_argument("--aliases", help="alias file: product spellings and their codes")
     arguments.add_argument("--pin-codes", help="PIN code list with the columns pin_code, district, state")
+    arguments.add_argument("--pin-code-overrides",
+                           help="your own file for PIN codes the list cannot decide (needs --pin-codes)")
     arguments.add_argument("--output", help="folder for the output files (needs --aliases)")
     arguments.add_argument("--details", action="store_true", help="list every message (no message text)")
     options = arguments.parse_args()
 
     if options.output and not options.aliases:
         raise SystemExit("--output needs --aliases, because products are read from the alias file.")
+    if options.pin_code_overrides and not options.pin_codes:
+        raise SystemExit("--pin-code-overrides needs --pin-codes.")
     if options.output:
         check_output_folder(options.output)   # fail early, before any work is done
 
@@ -711,7 +768,8 @@ def main():
     # Both groups are validated together, so a duplicate is found even
     # when the two copies are in different groups.
     pin_codes = read_pin_codes(options.pin_codes) if options.pin_codes else None
-    validate_orders(orders, pin_codes)
+    overrides = read_pin_code_overrides(options.pin_code_overrides) if options.pin_code_overrides else None
+    validate_orders(orders, pin_codes, overrides)
 
     flagged = [order for order in orders if order.flags]
     all_items = [item for order in orders for item in order.items]
@@ -725,6 +783,12 @@ def main():
         print("district and state: not filled (no --pin-codes file was given)")
     else:
         print(f"district and state: filled for {sum(1 for o in orders if o.district_city)} of {len(orders)} orders")
+    if overrides is not None:
+        print(f"PIN code overrides: {len(overrides)} in your file, "
+              f"used for {sum(1 for o in orders if OVERRIDE_NOTE in o.notes)} orders")
+        unknown_names = override_names_not_in_list(pin_codes, overrides)
+        if unknown_names:
+            print("  check the spelling: these names are not used in the PIN code list: " + ", ".join(unknown_names))
 
     if options.output:
         folder = write_outputs(orders, options.output)

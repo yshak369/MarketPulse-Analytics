@@ -175,6 +175,15 @@ India Post publishes a public list that maps each PIN code to its district and s
 - The same district is always spelled the same way.
 - If the PIN code is missing or not in the list, district and state stay unknown and the order is flagged.
 
+**Owner's override file (optional).** The official list gives more than one district for some PIN codes, and misses a few. The parser never chooses for those. The owner can write the correct place in a private file with the columns `pin_code, district, state`, and pass it with `--pin-code-overrides`:
+
+- A PIN code in the file uses the owner's district and state, even when the official list has a different one.
+- The order gets the note `pin_code_override`, so it is always visible where the value came from.
+- The file must be exact. A bad PIN code, an empty district or state, or the same PIN code with two places stops the script.
+- Names not used in the official list are printed as a spelling warning.
+- The Shopify script takes the same file, so both channels use the same districts.
+- The real file is private. `data/synthetic/synthetic_pin_code_overrides.csv` is a fake one for tests.
+
 The list is a public dataset. Its source and licence must be recorded in `dataset_sources.md` before it is downloaded.
 
 ## 10. Validation rules

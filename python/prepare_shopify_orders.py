@@ -30,6 +30,7 @@ Rules:
     For a COD order that is the amount to COLLECT, not money received.
   * Cancelled and refunded orders are kept, with their status.
   * District and state come from the PIN code list, as for WhatsApp.
+    --pin-code-overrides takes the same override file as the parser.
   * Unknown product titles are flagged, never matched to a similar name.
 """
 
@@ -41,8 +42,8 @@ from collections import Counter
 import pandas as pd
 
 from parse_whatsapp_orders import (
-    PHONE, PIN_CODE, check_output_folder, format_amount, normalise_product_name,
-    read_aliases, read_pin_codes, write_csv,
+    OVERRIDE_NOTE, PHONE, PIN_CODE, check_output_folder, format_amount, normalise_product_name,
+    override_names_not_in_list, read_aliases, read_pin_code_overrides, read_pin_codes, write_csv,
 )
 
 REQUIRED_COLUMNS = [
@@ -117,7 +118,7 @@ def to_number(text, what, order_name):
         raise ExportProblem(f"Order {order_name}: unreadable {what} '{text}'")
 
 
-def build_orders(export, aliases, pin_codes=None):
+def build_orders(export, aliases, pin_codes=None, overrides=None):
     """Group the rows by order and return (orders, items, unknown titles, payment methods)."""
     orders = []
     items = []
@@ -159,6 +160,9 @@ def build_orders(export, aliases, pin_codes=None):
         if not PIN_CODE.match(pin_code):
             flags.append("missing_pin_code" if not pin_code else "invalid_pin_code")
             pin_code = ""
+        elif pin_codes is not None and overrides and pin_code in overrides:
+            district, state = overrides[pin_code]   # the owner's own decision
+            notes.append(OVERRIDE_NOTE)
         elif pin_codes is not None:
             place = pin_codes.get(pin_code, "not found")
             if place == "not found":
@@ -232,15 +236,20 @@ def main():
     arguments.add_argument("--input", required=True, help="the Shopify orders export (CSV)")
     arguments.add_argument("--aliases", required=True, help="alias file: product titles and their codes")
     arguments.add_argument("--pin-codes", help="PIN code list with the columns pin_code, district, state")
+    arguments.add_argument("--pin-code-overrides",
+                           help="your own file for PIN codes the list cannot decide (needs --pin-codes)")
     arguments.add_argument("--output", required=True, help="folder for the output files")
     options = arguments.parse_args()
 
     check_output_folder(options.output)   # fail early, before any work is done
     aliases = read_aliases(options.aliases)
+    if options.pin_code_overrides and not options.pin_codes:
+        raise SystemExit("--pin-code-overrides needs --pin-codes.")
     pin_codes = read_pin_codes(options.pin_codes) if options.pin_codes else None
+    overrides = read_pin_code_overrides(options.pin_code_overrides) if options.pin_code_overrides else None
     try:
         export = read_export(options.input)
-        orders, items, unknown_titles, payment_methods = build_orders(export, aliases, pin_codes)
+        orders, items, unknown_titles, payment_methods = build_orders(export, aliases, pin_codes, overrides)
     except ExportProblem as problem:
         raise SystemExit(f"Stopped: {problem}")
 
@@ -259,6 +268,12 @@ def main():
         print(f"  {count:>5}  {method}")
     if pin_codes is None:
         print("district and state: not filled (no --pin-codes file was given)")
+    if overrides is not None:
+        used = sum(1 for order in orders if OVERRIDE_NOTE in order[ORDER_COLUMNS.index("notes")].split(";"))
+        print(f"PIN code overrides: {len(overrides)} in your file, used for {used} orders")
+        unknown_names = override_names_not_in_list(pin_codes, overrides)
+        if unknown_names:
+            print("  check the spelling: these names are not used in the PIN code list: " + ", ".join(unknown_names))
 
     folder = write_outputs(orders, items, unknown_titles, options.output)
     print(f"three files written to {folder}")

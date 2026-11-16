@@ -265,7 +265,7 @@ class ExtractOrderTest(unittest.TestCase):
             self.assertTrue(order.items)
 
 
-def parse_fake_chats(pin_codes=None):
+def parse_fake_chats(pin_codes=None, overrides=None):
     """Parse, extract and validate both fake chats, as the script does."""
     aliases = parser.read_aliases(SYNTHETIC / "synthetic_product_aliases.csv")
     orders = []
@@ -273,7 +273,7 @@ def parse_fake_chats(pin_codes=None):
         for message in parser.parse_chat(path, group, IGNORE_PHONES):
             if message.category == "order":
                 orders.append(parser.extract_order(message, aliases, IGNORE_PHONES))
-    return parser.validate_orders(orders, pin_codes)
+    return parser.validate_orders(orders, pin_codes, overrides)
 
 
 class PinCodeLookupTest(unittest.TestCase):
@@ -332,6 +332,81 @@ class PinCodeLookupTest(unittest.TestCase):
         orders = {o.name: o for o in parse_fake_chats()}
         self.assertEqual(orders["Test Customer Twelve"].flags, [])
         self.assertEqual(orders["Test Buyer Six"].district_city, "")
+
+
+class PinCodeOverrideTest(unittest.TestCase):
+    """The owner's own file for PIN codes the official list cannot decide."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pin_codes = parser.read_pin_codes(SYNTHETIC / "synthetic_pin_code_sample.csv")
+        cls.overrides = parser.read_pin_code_overrides(SYNTHETIC / "synthetic_pin_code_overrides.csv")
+
+    def read_text(self, text):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "overrides.csv"
+            path.write_text(text, encoding="utf-8")
+            return parser.read_pin_code_overrides(path)
+
+    def order_with(self, pin_code, pin_codes, overrides):
+        order = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        order.pin_codes = [pin_code]
+        parser.validate_orders([order], pin_codes, overrides)
+        return order
+
+    def test_fake_file_is_read(self):
+        self.assertEqual(self.overrides["999999"], ("Synthetic District", "Synthetic State"))
+        self.assertEqual(len(self.overrides), 2)
+
+    def test_pin_code_not_in_list_uses_the_override(self):
+        order = self.order_with("999999", self.pin_codes, self.overrides)
+        self.assertEqual((order.district_city, order.state), ("Synthetic District", "Synthetic State"))
+        self.assertEqual(order.flags, [])
+        self.assertEqual(order.notes, ["pin_code_override"])
+
+    def test_ambiguous_pin_code_uses_the_override(self):
+        order = self.order_with("641001", {"641001": None}, self.overrides)
+        self.assertEqual((order.district_city, order.flags), ("Coimbatore", []))
+        order = self.order_with("641001", {"641001": ("", "Tamil Nadu")}, self.overrides)
+        self.assertEqual((order.district_city, order.flags), ("Coimbatore", []))
+
+    def test_other_orders_are_not_touched(self):
+        order = self.order_with("600001", self.pin_codes, self.overrides)
+        self.assertEqual((order.district_city, order.notes), ("Chennai", []))
+        order = self.order_with("888888", self.pin_codes, self.overrides)
+        self.assertEqual((order.district_city, order.flags), ("", ["pin_code_not_found"]))
+
+    def test_two_pin_codes_are_still_not_chosen(self):
+        order = make_order("9000000201", datetime(2025, 3, 3, 10, 0))
+        order.pin_codes = ["999999", "600001"]
+        parser.validate_orders([order], self.pin_codes, self.overrides)
+        self.assertEqual((order.district_city, order.flags), ("", ["multiple_pin_codes"]))
+
+    def test_fake_chat_order_is_filled(self):
+        orders = {o.name: o for o in parse_fake_chats(self.pin_codes, self.overrides)}
+        twelve = orders["Test Customer Twelve"]
+        self.assertEqual((twelve.district_city, twelve.flags), ("Synthetic District", []))
+
+    def test_unclear_rows_stop_the_script(self):
+        header = "pin_code,district,state\n"
+        for text, message in [
+            (header + "12345,Chennai,Tamil Nadu\n", "not a 6-digit"),
+            (header + "600001,,Tamil Nadu\n", "must both be filled"),
+            (header + "600001,Chennai,\n", "must both be filled"),
+            (header + "600001,Chennai,Tamil Nadu\n600001,Madurai,Tamil Nadu\n", "appears twice"),
+            ("pin_code,district\n600001,Chennai\n", "missing these columns: state"),
+        ]:
+            with self.assertRaisesRegex(SystemExit, message):
+                self.read_text(text)
+
+    def test_same_row_twice_and_spaces_are_fine(self):
+        overrides = self.read_text("pin_code,district,state\n600 001, Chennai ,Tamil Nadu\n600001,Chennai,Tamil Nadu\n")
+        self.assertEqual(overrides, {"600001": ("Chennai", "Tamil Nadu")})
+
+    def test_names_not_in_the_list_are_reported(self):
+        self.assertEqual(parser.override_names_not_in_list(self.pin_codes, self.overrides),
+                         ["Synthetic District", "Synthetic State"])
+        self.assertEqual(parser.override_names_not_in_list(self.pin_codes, {"641001": ("Coimbatore", "Tamil Nadu")}), [])
 
 
 def make_order(phone, recorded_at, product_code="CXE", quantity=1, group="prepaid"):

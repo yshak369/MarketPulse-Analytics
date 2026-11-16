@@ -83,6 +83,13 @@ class FakeExportTest(unittest.TestCase):
         self.assertEqual((order["pin_code"], order["district_city"]), ("999999", ""))
         self.assertEqual(order["review_flags"], "pin_code_not_found")
 
+    def test_pin_code_override_is_used(self):
+        overrides = shopify.read_pin_code_overrides(SYNTHETIC / "synthetic_pin_code_overrides.csv")
+        orders, _, _, _ = shopify.build_orders(self.export, ALIASES, PIN_CODES, overrides)
+        order = {o[0]: dict(zip(shopify.ORDER_COLUMNS, o)) for o in orders}["S-1008"]
+        self.assertEqual((order["district_city"], order["state"]), ("Synthetic District", "Synthetic State"))
+        self.assertEqual((order["review_flags"], order["notes"]), ("", "pin_code_override"))
+
     def test_payment_rules(self):
         self.assertEqual(self.orders["S-1009"]["payment_type"], "needs_review")
         self.assertEqual(self.orders["S-1009"]["review_flags"], "payment_unclear")
