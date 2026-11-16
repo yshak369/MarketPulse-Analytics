@@ -251,6 +251,32 @@ SELECT (SELECT count(*) FROM customers)      AS customers,
        (SELECT count(*) FROM ad_performance) AS campaign_days;
 ```
 
+## 5a. Audit and clean
+
+Run these after every import. Both print counts only, so their output is safe to share. Both ask for the password.
+
+**Audit** (only reads):
+
+```
+python python/audit_data_quality.py --database marketpulse_private
+```
+
+Add `--period-start` and `--period-end` (for example `2024-01-01` and `2026-11-15`) to also check for dates outside the period your data covers.
+
+**Clean** (rebuilds the `clean` schema in one transaction; the raw tables are only read):
+
+```
+python python/clean_data.py --database marketpulse_private
+```
+
+The rules are explained in `data_cleaning.md`. Most of your orders will have `value_basis = 'estimated'`, because Prepaid amounts are not written in WhatsApp.
+
+To look at the clean tables in pgAdmin, put `clean.` in front of the table name, for example:
+
+```sql
+SELECT value_basis, count(*) FROM clean.orders GROUP BY value_basis;
+```
+
 ## 6. If something goes wrong
 
 | Message | Meaning | What to do |
@@ -263,3 +289,6 @@ SELECT (SELECT count(*) FROM customers)      AS customers,
 | A skipped order with `product_not_in_products_table` | A code in the alias file is not in the `products` table | Add the product (section 3.3), or correct the code in the alias file |
 | `password authentication failed` | The password was typed wrongly. Typing is hidden | Run the command again |
 | `Refusing to load ... into the public synthetic dataset` | The command named the synthetic database | Use `-d marketpulse_private` |
+| `The products table has no cod_price column yet` | The database was built before November 2026 | Follow section 3.3a |
+| `Nothing was written (rolled back): ...` | A cleaning result broke a rule, or the database refused it. The old `clean` schema is unchanged | Share the message (it shows one line only), not any data |
+| A SQL line typed in the terminal gives `The term 'UPDATE' is not recognized` | PowerShell does not understand SQL | Run SQL in the pgAdmin Query Tool, or inside `psql ... -c "..."` |

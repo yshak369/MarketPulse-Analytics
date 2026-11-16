@@ -44,6 +44,10 @@ Notes:
 3. Real data is never uploaded or pasted into an external AI service, including coding assistants.
 4. Code is written and tested with fake examples. The owner then runs it on the real data locally.
 5. The `data/raw` and `data/processed` folders are ignored by Git as a second safety layer.
+6. The private database needs a typed password every time. The password file on the owner's computer covers only the synthetic database, so a tool running commands there cannot open the real data by itself.
+7. Only counts are shared from a private run, never rows. A database error can quote the values of a row, in lines starting with `DETAIL:` or `CONTEXT:`. These are removed before an error is shared.
+8. The `clean` schema holds no names, phones, addresses, PIN codes or notes (see `data_cleaning.md`). This lowers the risk in analysis and dashboards. It does **not** make real clean data safe to publish: dates, places and amounts are still confidential business data.
+9. A notebook saves its results inside the file, and the file is tracked by Git. So any notebook runs on the synthetic database only. Real data is analysed with scripts.
 
 ## Anonymisation rules
 
