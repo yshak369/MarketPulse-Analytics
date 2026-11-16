@@ -88,6 +88,25 @@ CUSTOMER_COLUMNS = [
     "orders_counted", "is_repeat_customer",
 ]
 
+AD_COLUMNS = [
+    "campaign_id", "campaign_name", "report_date", "week_start", "report_month", "weekday",
+    "amount_spent_inr", "impressions", "reach", "link_clicks", "clicks_all", "landing_page_views",
+    "results", "result_type", "result_indicator",
+]
+
+SHIPMENT_COLUMNS = [
+    "shipment_id", "order_id", "courier", "delivery_status", "delivered_date", "delivery_days",
+    "delivery_date_problem", "cod_amount_received", "shipping_cost", "include_in_analysis",
+]
+
+# Meta's long "result indicator" -> a short result type. Checked in order.
+# Results of different types are never added together.
+RESULT_TYPES = [
+    ("messaging_conversation_started", "messaging_conversation"),
+    ("link_click", "link_click"),
+    ("post_engagement", "post_engagement"),
+]
+
 
 def flag_sets(review_flags):
     """Turn "flag_a;flag_b" into {"flag_a", "flag_b"}, one set per order."""
@@ -226,11 +245,63 @@ def build_customers(customers, clean_orders_table):
     return table[CUSTOMER_COLUMNS]
 
 
+def result_type_of(indicator):
+    """A short name for Meta's result indicator. Missing stays missing."""
+    if indicator is None or pd.isna(indicator) or not str(indicator).strip():
+        return pd.NA
+    for part, result_type in RESULT_TYPES:
+        if part in str(indicator):
+            return result_type
+    return "other"   # a kind not seen before: never guessed to be one of the above
+
+
+def clean_ad_performance(ad_performance, ad_campaigns):
+    """Daily ad numbers with a short result type and date parts.
+
+    Only raw numbers are kept. CPM, CTR, cost per result and other
+    ratios are worked out in SQL or Power BI, from these numbers.
+    """
+    ads = ad_performance.merge(ad_campaigns[["campaign_id", "campaign_name"]], on="campaign_id", how="left")
+    day = pd.to_datetime(ads["report_date"])
+    ads["report_date"] = day
+    ads["week_start"] = day - pd.to_timedelta(day.dt.dayofweek, unit="D")
+    ads["report_month"] = day.dt.to_period("M").dt.to_timestamp()
+    ads["weekday"] = day.dt.day_name()
+    ads["result_type"] = ads["result_indicator"].apply(result_type_of)
+    return ads[AD_COLUMNS]
+
+
+def clean_shipments(shipments, clean_orders_table):
+    """Shipments with the number of days from order to delivery.
+
+    A delivery date before the order date is impossible. Its
+    delivery_days stays empty and delivery_date_problem is true.
+    """
+    clean = shipments.copy()
+    clean["delivery_status"] = clean["delivery_status"].str.strip().str.lower()
+    clean["delivered_date"] = pd.to_datetime(clean["delivered_date"])
+    order_dates = clean_orders_table.set_index("order_id")["order_date"]
+    days = (clean["delivered_date"] - clean["order_id"].map(order_dates)).dt.days
+    clean["delivery_date_problem"] = days < 0
+    clean["delivery_days"] = days.mask(days < 0).astype("Int64")
+    included = clean_orders_table.set_index("order_id")["include_in_analysis"]
+    clean["include_in_analysis"] = clean["order_id"].map(included).fillna(False).astype(bool)
+    return clean[SHIPMENT_COLUMNS]
+
+
 def clean_all(tables):
-    """Clean the order tables. Returns a dictionary: table name -> DataFrame."""
+    """Clean all the tables. Returns a dictionary: table name -> DataFrame.
+
+    products and ad_campaigns hold no personal details and need no
+    cleaning, so they are copied as they are.
+    """
     orders = clean_orders(tables["orders"], tables["order_items"], tables["products"])
     return {
+        "products": tables["products"].copy(),
+        "customers": build_customers(tables["customers"], orders),
         "orders": orders,
         "order_items": clean_order_items(tables["order_items"], orders, tables["products"]),
-        "customers": build_customers(tables["customers"], orders),
+        "shipments": clean_shipments(tables["shipments"], orders),
+        "ad_campaigns": tables["ad_campaigns"].copy(),
+        "ad_performance": clean_ad_performance(tables["ad_performance"], tables["ad_campaigns"]),
     }

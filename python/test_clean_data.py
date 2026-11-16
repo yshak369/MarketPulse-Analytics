@@ -228,6 +228,59 @@ class DateRuleTest(unittest.TestCase):
         self.assertEqual((order["weekday"], order["hour"]), ("Saturday", 10))
 
 
+class AdRuleTest(unittest.TestCase):
+    def test_result_types(self):
+        kind = clean_data.result_type_of
+        self.assertEqual(kind("actions:onsite_conversion.messaging_conversation_started_7d"), "messaging_conversation")
+        self.assertEqual(kind("actions:link_click"), "link_click")
+        self.assertEqual(kind("actions:post_engagement"), "post_engagement")
+        self.assertEqual(kind("actions:video_view"), "other")   # new kind: never guessed
+        for empty in (None, np.nan, "", "  "):
+            self.assertTrue(pd.isna(kind(empty)))
+
+    def test_ads_keep_raw_numbers_and_get_date_parts(self):
+        tables = make_tables()
+        tables["ad_performance"]["result_indicator"] = [
+            "actions:onsite_conversion.messaging_conversation_started_7d", "actions:link_click"]
+        ads = clean(tables)["ad_performance"]
+        self.assertEqual(list(ads["result_type"]), ["messaging_conversation", "link_click"])
+        self.assertEqual(list(ads["campaign_name"]), ["Test campaign"] * 2)
+        self.assertEqual(ads["amount_spent_inr"].sum(), 880.0)              # unchanged
+        self.assertEqual(ads.loc[0, "week_start"], pd.Timestamp("2025-02-24"))
+        self.assertEqual(ads.loc[0, "report_month"], pd.Timestamp("2025-03-01"))
+        for ratio in ("cpm", "ctr", "cpc", "frequency", "cost_per_result"):
+            self.assertNotIn(ratio, ads.columns)
+
+
+class ShipmentRuleTest(unittest.TestCase):
+    def setUp(self):
+        self.tables = make_tables()
+
+    def test_delivery_days(self):
+        shipments = clean(self.tables)["shipments"]
+        self.assertEqual(list(shipments["delivery_days"]), [4, 4, 4])   # 1->5, 2->6, 3->7 March
+        self.assertFalse(shipments["delivery_date_problem"].any())
+
+    def test_not_delivered_has_no_days(self):
+        self.tables["shipments"].loc[0, ["delivery_status", "delivered_date"]] = ["returned", pd.NaT]
+        shipments = clean(self.tables)["shipments"]
+        self.assertTrue(pd.isna(shipments.loc[0, "delivery_days"]))
+        self.assertFalse(shipments.loc[0, "delivery_date_problem"])
+
+    def test_impossible_delivery_date_is_not_used(self):
+        self.tables["shipments"].loc[0, "delivered_date"] = pd.Timestamp("2025-02-27")   # before the order
+        shipments = clean(self.tables)["shipments"]
+        self.assertTrue(pd.isna(shipments.loc[0, "delivery_days"]))
+        self.assertTrue(shipments.loc[0, "delivery_date_problem"])
+
+    def test_status_is_tidied_and_cancelled_orders_follow_the_order(self):
+        self.tables["shipments"].loc[1, "delivery_status"] = " Delivered "
+        self.tables["orders"].loc[2, "cancelled_at"] = pd.Timestamp("2025-03-03 15:00")
+        shipments = clean(self.tables)["shipments"]
+        self.assertEqual(shipments.loc[1, "delivery_status"], "delivered")
+        self.assertEqual(list(shipments["include_in_analysis"]), [True, True, False])
+
+
 class SyntheticDatabaseTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -243,7 +296,9 @@ class SyntheticDatabaseTest(unittest.TestCase):
         cls.orders = cls.result["orders"]
 
     def test_every_row_is_kept(self):
-        for name in ("orders", "order_items", "customers"):
+        # All eight tables except product_aliases, which only the import code needs.
+        self.assertEqual(set(self.result), set(database.TABLE_NAMES) - {"product_aliases"})
+        for name in self.result:
             with self.subTest(table=name):
                 self.assertEqual(len(self.result[name]), len(self.raw[name]))
 
@@ -259,6 +314,20 @@ class SyntheticDatabaseTest(unittest.TestCase):
 
     def test_recorded_amounts_are_unchanged(self):
         pd.testing.assert_series_equal(self.orders["order_amount"], self.raw["orders"]["order_amount"])
+
+    def test_ad_spend_and_results_are_unchanged(self):
+        ads = self.result["ad_performance"]
+        self.assertAlmostEqual(ads["amount_spent_inr"].sum(), self.raw["ad_performance"]["amount_spent_inr"].sum(), 2)
+        self.assertEqual(set(ads["result_type"]), {"messaging_conversation", "link_click"})
+        self.assertEqual(ads.groupby("result_type")["results"].sum().to_dict(),
+                         {"link_click": 2271, "messaging_conversation": 26156})
+
+    def test_shipments(self):
+        shipments = self.result["shipments"]
+        self.assertFalse(shipments["delivery_date_problem"].any())
+        delivered = shipments["delivery_status"] == "delivered"
+        self.assertTrue(shipments.loc[delivered, "delivery_days"].notna().all())
+        self.assertTrue(shipments.loc[~delivered, "delivery_days"].isna().all())
 
     def test_no_personal_column(self):
         for name, table in self.result.items():
