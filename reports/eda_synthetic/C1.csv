@@ -1,0 +1,3 @@
+version,customers,repeat_customers,repeat_share
+all counted orders,1992,474,0.23795180722891565
+without possible duplicates,1992,467,0.23443775100401607

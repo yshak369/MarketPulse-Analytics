@@ -1,0 +1,3 @@
+courier,payment_type,shipments,delivered,returned,unknown,delivered_share,returned_share
+delhivery,cod,1692,1349,293,50,0.7972813238770685,0.1731678486997636
+speed_post,prepaid,1188,1149,23,16,0.9671717171717171,0.01936026936026936

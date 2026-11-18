@@ -4,14 +4,16 @@ An end-to-end e-commerce sales and marketing analytics portfolio project.
 
 It analyses sales, advertising, customer behaviour, product performance and profitability, using SQL, Python, Pandas, NumPy, PostgreSQL and Power BI.
 
-> Status: Phases 1 to 3 complete (project structure, database schema, data importing, data cleaning). Phase 4 (exploratory data analysis) not started.
+> Status: Phases 1 to 4 complete (project structure, database schema, data importing, data cleaning, exploratory data analysis). Phase 5 (SQL business analysis) not started.
+
+**[Read the synthetic exploratory data analysis report](reports/eda_synthetic/eda_report.md)** — sales, customer, payment and marketing questions answered from the clean, fully synthetic data.
 
 ## How the data flows
 
 ```
 WhatsApp chats ─► parse_whatsapp_orders.py ─┐
-Shopify export ─► prepare_shopify_orders.py ─┼─► PostgreSQL raw tables ─► audit + clean_data.py ─► "clean" schema ─► analysis, Power BI
-Meta Ads export ─► prepare_meta_ads.py ──────┘     (sql/01 to 06)          (Python, Pandas)        (sql/07)
+Shopify export ─► prepare_shopify_orders.py ─┼─► PostgreSQL raw tables ─► audit + clean_data.py ─► "clean" schema ─► eda.py ─► SQL, Power BI
+Meta Ads export ─► prepare_meta_ads.py ──────┘     (sql/01 to 06)          (Python, Pandas)        (sql/07)           report
 ```
 
 The public version of this project uses **synthetic (fake) data** in exactly the same tables. See `docs/synthetic_data_plan.md`.
@@ -25,9 +27,10 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s python
 python python/audit_data_quality.py --database marketpulse_synthetic --period-start 2025-01-01 --period-end 2025-12-31
 python python/clean_data.py --database marketpulse_synthetic
+python python/eda.py --database marketpulse_synthetic --output reports/eda_synthetic
 ```
 
-The cleaning rules, and why each one exists, are explained in `docs/data_cleaning.md`.
+The cleaning rules, and why each one exists, are explained in `docs/data_cleaning.md`. The exploratory analysis method and its known traps are explained in `docs/eda.md`.
 
 ## Modules
 
@@ -47,6 +50,7 @@ The cleaning rules, and why each one exists, are explained in `docs/data_cleanin
 | `sql` | PostgreSQL schema and analysis queries. |
 | `notebooks` | Planned for Jupyter notebooks. Empty for now (see `docs/data_cleaning.md`, section 7). |
 | `python` | Reusable Python scripts. |
+| `reports` | The published exploratory data analysis report (synthetic data only). |
 | `dashboards` | Power BI dashboard and screenshots. |
 | `docs` | Dataset sources, insights and written notes. |
 

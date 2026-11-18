@@ -277,6 +277,18 @@ To look at the clean tables in pgAdmin, put `clean.` in front of the table name,
 SELECT value_basis, count(*) FROM clean.orders GROUP BY value_basis;
 ```
 
+## 5b. Exploratory data analysis
+
+After cleaning, build the report (read-only; asks for the password):
+
+```
+python python/eda.py --database marketpulse_private --output D:\Private\MarketPulse-Data\output\eda
+```
+
+The method, and known traps when reading it, are explained in `eda.md`. The console prints counts only. `eda_report.md`, the charts and the CSV files it writes hold real business figures (order values, districts, ad spend), so they stay in your private folder — **do not** paste them here, and do not point `--output` at a folder inside the project. The script refuses any path inside the project except `data/processed/`.
+
+A section may say "No advertising data yet" or "No courier delivery records yet" until you run the Meta Ads and Shopify imports (sections 4.2 and 4.3) and add courier records to the `shipments` table.
+
 ## 6. If something goes wrong
 
 | Message | Meaning | What to do |
