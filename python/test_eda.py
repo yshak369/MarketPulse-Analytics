@@ -137,6 +137,125 @@ class BasketAndValueTest(unittest.TestCase):
         self.assertEqual((row["estimated_value"], row["orders_unknown"]), (0.0, 1))
 
 
+class CustomerTest(unittest.TestCase):
+    """C-1 ordered W-1 (1 March) and S-1 (3 March). C-2 ordered W-2 (2 March)."""
+
+    def test_repeat_customers(self):
+        table = eda.repeat_customers(clean()["orders"]).set_index("version")
+        row = table.loc["all counted orders"]
+        self.assertEqual((row["customers"], row["repeat_customers"], row["repeat_share"]), (2, 1, 0.5))
+
+    def test_repeat_customers_without_possible_duplicates(self):
+        def s1_duplicate(tables):
+            tables["orders"].loc[2, "review_flags"] = "possible_duplicate"
+        table = eda.repeat_customers(clean(s1_duplicate)["orders"]).set_index("version")
+        self.assertEqual(table.loc["all counted orders", "repeat_customers"], 1)
+        self.assertEqual(table.loc["without possible duplicates", "repeat_customers"], 0)
+
+    def test_unknown_customers_are_left_out(self):
+        def no_phone(tables):
+            tables["orders"].loc[1, "review_flags"] = "missing_phone"
+        row = eda.repeat_customers(clean(no_phone)["orders"]).iloc[0]
+        self.assertEqual(row["customers"], 1)
+
+    def test_days_to_second_order(self):
+        row = eda.days_to_second_order(clean()["orders"]).iloc[0]
+        self.assertEqual((row["customers_with_a_second_order"], row["median_days"]), (1, 2.0))
+
+    def test_no_second_orders(self):
+        row = eda.days_to_second_order(clean(cancel_s1)["orders"]).iloc[0]
+        self.assertEqual(row["customers_with_a_second_order"], 0)
+
+    def test_new_and_returning_by_month(self):
+        def no_phone(tables):
+            tables["orders"].loc[1, "review_flags"] = "missing_phone"
+        row = eda.new_and_returning_by_month(clean(no_phone)["orders"]).iloc[0]
+        self.assertEqual((row["new_customer_orders"], row["returning_customer_orders"],
+                          row["unknown_customer_orders"]), (1, 1, 1))
+
+    def test_repeat_by_district_leaves_out_small_districts(self):
+        orders = clean()["orders"]
+        table = eda.repeat_customers_by_district(orders, min_customers=1)
+        self.assertEqual(table.to_dict("records"), [{"district_city": "Chennai", "state": "Tamil Nadu",
+                                                     "customers": 2, "repeat_customers": 1, "repeat_share": 0.5}])
+        self.assertTrue(eda.repeat_customers_by_district(orders, min_customers=3).empty)
+
+
+class PaymentTest(unittest.TestCase):
+    """W-1 is COD. W-2 and S-1 are Prepaid."""
+
+    def test_payment_by_month(self):
+        row = eda.payment_by_month(clean()["orders"]).iloc[0]
+        self.assertEqual((row["cod"], row["prepaid"], row["needs_review"]), (1, 2, 0))
+        self.assertAlmostEqual(row["cod_share"], 1 / 3)
+
+    def test_needs_review_is_left_out_of_the_cod_share(self):
+        def needs_review(tables):
+            tables["orders"].loc[1, "payment_type"] = "needs_review"
+        row = eda.payment_by_month(clean(needs_review)["orders"]).iloc[0]
+        self.assertEqual((row["needs_review"], row["cod_share"]), (1, 0.5))   # 1 COD of 2 known
+
+    def test_cod_share_by_state_leaves_out_small_states(self):
+        orders = clean()["orders"]
+        row = eda.cod_share_by_state(orders, min_orders=3).iloc[0]
+        self.assertEqual((row["state"], row["orders"]), ("Tamil Nadu", 3))
+        self.assertAlmostEqual(row["cod_share"], 1 / 3)
+        self.assertTrue(eda.cod_share_by_state(orders, min_orders=4).empty)
+
+    def test_basket_by_payment(self):
+        table = eda.basket_by_payment(clean()["orders"]).set_index("payment_type")
+        self.assertEqual((table.loc["cod", "orders"], table.loc["cod", "average_units"]), (1, 2.0))
+        self.assertEqual((table.loc["prepaid", "orders"], table.loc["prepaid", "average_units"]), (2, 1.0))
+
+    def test_product_mix_by_payment(self):
+        table = eda.product_mix_by_payment(clean()["order_items"], clean()["orders"]).set_index("product_code")
+        self.assertEqual((table.loc["CXE", "cod"], table.loc["LP", "cod"]), (0.5, 0.5))
+        self.assertEqual((table.loc["CXE", "prepaid"], table.loc["LP", "prepaid"]), (1.0, 0.0))
+
+    def test_cod_to_collect_by_week(self):
+        table = eda.cod_to_collect_by_week(clean()["orders"])
+        self.assertEqual(table.to_dict("records"), [{
+            "week_start": pd.Timestamp("2025-02-24"), "cod_orders": 1, "amount_to_collect": 650.0,
+            "estimated_to_collect": 0.0, "orders_without_value": 0}])
+
+    def test_cod_estimate_is_kept_apart_from_the_recorded_amount(self):
+        def no_brackets(tables):
+            tables["orders"].loc[0, ["order_amount", "amount_basis", "review_flags"]] = [None, "unknown", "cod_amount_missing"]
+            tables["order_items"].loc[[0, 1], "line_amount"] = None
+        row = eda.cod_to_collect_by_week(clean(no_brackets)["orders"]).iloc[0]
+        self.assertEqual((row["amount_to_collect"], row["estimated_to_collect"]), (0.0, 800.0))   # COD prices 600 + 200
+
+
+class ShippingTest(unittest.TestCase):
+    """SH-1 (W-1, Delhivery), SH-2 (W-2) and SH-3 (S-1, both Speed Post): all delivered after 4 days."""
+
+    def test_delivery_outcomes(self):
+        tables = clean()
+        table = eda.delivery_outcomes(tables["shipments"], tables["orders"])
+        self.assertEqual(table[["courier", "payment_type", "shipments", "delivered"]].to_dict("records"), [
+            {"courier": "delhivery", "payment_type": "cod", "shipments": 1, "delivered": 1},
+            {"courier": "speed_post", "payment_type": "prepaid", "shipments": 2, "delivered": 2}])
+
+    def test_returned_share(self):
+        def returned(tables):
+            tables["shipments"].loc[1, ["delivery_status", "delivered_date"]] = ["returned", pd.NaT]
+        tables = clean(returned)
+        row = eda.delivery_outcomes(tables["shipments"], tables["orders"]).set_index("courier").loc["speed_post"]
+        self.assertEqual((row["returned"], row["returned_share"]), (1, 0.5))
+
+    def test_delivery_days_by_courier(self):
+        tables = clean()
+        table = eda.delivery_days_by_courier(tables["shipments"], tables["orders"]).set_index("courier")
+        self.assertEqual((table.loc["speed_post", "deliveries"], table.loc["speed_post", "median_days"]), (2, 4.0))
+
+    def test_no_courier_records_yet(self):
+        def no_shipments(tables):
+            tables["shipments"] = tables["shipments"].iloc[0:0]
+        tables = clean(no_shipments)
+        self.assertTrue(eda.delivery_outcomes(tables["shipments"], tables["orders"]).empty)
+        self.assertTrue(eda.delivery_days_by_courier(tables["shipments"], tables["orders"]).empty)
+
+
 class EmptyDataTest(unittest.TestCase):
     """No counted orders at all: every analysis gives an empty or zero result, never an error."""
 
@@ -155,6 +274,23 @@ class EmptyDataTest(unittest.TestCase):
         self.assertTrue(eda.top_districts(orders).empty)
         self.assertEqual(len(eda.basket_size(orders)), 2)
         self.assertTrue(eda.value_by_month(orders).empty)
+
+    def test_every_customer_and_payment_analysis_handles_no_orders(self):
+        def cancel_all(tables):
+            tables["orders"]["cancelled_at"] = pd.Timestamp("2025-03-05 10:00")
+        tables = clean(cancel_all)
+        orders, items, shipments = tables["orders"], tables["order_items"], tables["shipments"]
+        self.assertEqual(eda.repeat_customers(orders)["customers"].tolist(), [0, 0])
+        self.assertEqual(eda.days_to_second_order(orders).iloc[0]["customers_with_a_second_order"], 0)
+        self.assertTrue(eda.new_and_returning_by_month(orders).empty)
+        self.assertTrue(eda.repeat_customers_by_district(orders, min_customers=1).empty)
+        self.assertTrue(eda.payment_by_month(orders).empty)
+        self.assertTrue(eda.cod_share_by_state(orders, min_orders=1).empty)
+        self.assertTrue(eda.basket_by_payment(orders).empty)
+        self.assertTrue(eda.product_mix_by_payment(items, orders).empty)
+        self.assertTrue(eda.cod_to_collect_by_week(orders).empty)
+        self.assertTrue(eda.delivery_outcomes(shipments, orders).empty)       # shipments of cancelled orders
+        self.assertTrue(eda.delivery_days_by_courier(shipments, orders).empty)
 
 
 if __name__ == "__main__":
