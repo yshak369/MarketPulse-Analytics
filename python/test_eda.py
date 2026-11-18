@@ -11,7 +11,9 @@ How to run (from the project folder):
     python -m unittest discover -s python -v
 """
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -373,6 +375,43 @@ class EmptyDataTest(unittest.TestCase):
         self.assertTrue(eda.cod_to_collect_by_week(orders).empty)
         self.assertTrue(eda.delivery_outcomes(shipments, orders).empty)       # shipments of cancelled orders
         self.assertTrue(eda.delivery_days_by_courier(shipments, orders).empty)
+
+
+class OutputFolderGuardTest(unittest.TestCase):
+    def test_synthetic_report_folder_is_allowed_for_the_synthetic_database(self):
+        folder = eda.check_eda_output_folder(eda.SYNTHETIC_REPORT_FOLDER, "marketpulse_synthetic")
+        self.assertEqual(folder, eda.SYNTHETIC_REPORT_FOLDER)
+
+    def test_synthetic_report_folder_is_refused_for_another_database(self):
+        with self.assertRaises(SystemExit):
+            eda.check_eda_output_folder(eda.SYNTHETIC_REPORT_FOLDER, "marketpulse_private")
+
+    def test_a_different_project_folder_is_refused_even_for_the_synthetic_database(self):
+        with self.assertRaises(SystemExit):
+            eda.check_eda_output_folder(eda.PROJECT_FOLDER / "docs", "marketpulse_synthetic")
+
+    def test_outside_the_project_is_always_allowed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(eda.check_eda_output_folder(folder, "marketpulse_private").resolve(),
+                             Path(folder).resolve())
+
+
+class MarkdownTableTest(unittest.TestCase):
+    def test_empty_table(self):
+        self.assertEqual(eda.to_markdown_table(pd.DataFrame(columns=["a", "b"])), "_No rows._")
+
+    def test_formats_numbers_and_dates(self):
+        table = pd.DataFrame({"week": [pd.Timestamp("2025-03-01")], "orders": [1234], "value": [99.5]})
+        text = eda.to_markdown_table(table)
+        self.assertIn("2025-03-01", text)
+        self.assertIn("1,234", text)
+        self.assertIn("99.50", text)
+
+    def test_long_table_is_truncated_with_a_note(self):
+        table = pd.DataFrame({"n": range(20)})
+        text = eda.to_markdown_table(table, max_rows=5)
+        self.assertEqual(text.count("\n|"), 6)   # header + divider + 5 rows (divider counted once more below)
+        self.assertIn("15 more rows", text)
 
 
 if __name__ == "__main__":
