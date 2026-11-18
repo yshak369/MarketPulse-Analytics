@@ -416,3 +416,100 @@ def delivery_days_by_courier(shipments, orders):
         deliveries="size", average_days="mean", median_days="median",
         p90_days=lambda values: np.percentile(values, 90)).reset_index()
     return table[columns]
+
+
+# ---------------------------------------------------------------------
+# Marketing (M1 to M6)
+# ---------------------------------------------------------------------
+
+MESSAGING = "messaging_conversation"
+
+
+def spend_by_week(ad_performance):
+    """M1: ad spend per week, across all campaigns, with empty weeks as 0.
+
+    An empty result means there is no ad data yet.
+    """
+    columns = ["week_start", "amount_spent_inr"]
+    if ad_performance.empty:
+        return pd.DataFrame(columns=columns)
+    weeks = pd.date_range(ad_performance["week_start"].min(), ad_performance["week_start"].max(), freq="W-MON")
+    table = ad_performance.groupby("week_start")["amount_spent_inr"].sum().reindex(weeks, fill_value=0.0)
+    return table.rename_axis("week_start").reset_index()
+
+
+def cost_per_conversation(ad_performance):
+    """M2: cost per messaging conversation, per campaign.
+
+    Spend of days with a messaging_conversation result, divided by those
+    results. Never mixed with link clicks or other result types.
+    An empty result means there is no messaging campaign data yet.
+    """
+    columns = ["campaign_id", "campaign_name", "amount_spent_inr", "conversations", "cost_per_conversation"]
+    found = ad_performance[ad_performance["result_type"] == MESSAGING]
+    if found.empty:
+        return pd.DataFrame(columns=columns)
+    table = found.groupby(["campaign_id", "campaign_name"]).agg(
+        amount_spent_inr=("amount_spent_inr", "sum"), conversations=("results", "sum")).reset_index()
+    table["cost_per_conversation"] = table["amount_spent_inr"] / table["conversations"].replace(0, np.nan)
+    return table.sort_values("cost_per_conversation")[columns].reset_index(drop=True)
+
+
+def weekly_cpm_and_ctr(ad_performance):
+    """M3: weekly CPM (cost per 1,000 impressions) and CTR (all clicks / impressions), per campaign.
+
+    These ratios are never stored (schema design rule 1): they are
+    worked out here, from the raw spend, impressions and clicks.
+    A week with zero impressions gives an empty CPM and CTR, not a
+    division error.
+    An empty result means there is no ad data yet.
+    """
+    columns = ["campaign_id", "campaign_name", "week_start", "amount_spent_inr", "impressions", "cpm", "ctr"]
+    if ad_performance.empty:
+        return pd.DataFrame(columns=columns)
+    table = ad_performance.groupby(["campaign_id", "campaign_name", "week_start"]).agg(
+        amount_spent_inr=("amount_spent_inr", "sum"), impressions=("impressions", "sum"),
+        clicks_all=("clicks_all", "sum")).reset_index()
+    impressions = table["impressions"].replace(0, np.nan)
+    table["cpm"] = table["amount_spent_inr"] / impressions * 1000
+    table["ctr"] = table["clicks_all"] / impressions
+    return table[columns].sort_values(["campaign_id", "week_start"]).reset_index(drop=True)
+
+
+def spend_and_orders_by_week(ad_performance, orders):
+    """M4-M6: weekly ad spend next to weekly WhatsApp order count.
+
+    Also returns the correlation between the two (np.corrcoef), spend
+    per order, and messaging conversations per WhatsApp order. The
+    correlation shows a PATTERN ONLY. It is never proof that spend in
+    one week caused the orders in that week: nothing in this data links
+    a specific ad to a specific order (see docs/schema_design.md).
+
+    An empty result means there is no ad data yet. correlation is NaN
+    when there are fewer than 2 weeks, or spend or orders never vary.
+    """
+    columns = ["week_start", "amount_spent_inr", "messaging_conversations", "whatsapp_orders",
+               "spend_per_order", "conversations_per_order"]
+    if ad_performance.empty:
+        return pd.DataFrame(columns=columns), np.nan
+
+    whatsapp = counted_orders(orders)
+    whatsapp = whatsapp[whatsapp["sales_channel"] == "whatsapp"]
+    weeks = pd.date_range(ad_performance["week_start"].min(), ad_performance["week_start"].max(), freq="W-MON")
+
+    spend = ad_performance.groupby("week_start")["amount_spent_inr"].sum().reindex(weeks, fill_value=0.0)
+    conversations = (ad_performance[ad_performance["result_type"] == MESSAGING]
+                     .groupby("week_start")["results"].sum().reindex(weeks, fill_value=0))
+    order_counts = whatsapp["week_start"].value_counts().reindex(weeks, fill_value=0)
+
+    table = pd.DataFrame({"week_start": weeks, "amount_spent_inr": spend.to_numpy(),
+                          "messaging_conversations": conversations.to_numpy(),
+                          "whatsapp_orders": order_counts.to_numpy()})
+    table["spend_per_order"] = table["amount_spent_inr"] / table["whatsapp_orders"].replace(0, np.nan)
+    table["conversations_per_order"] = table["messaging_conversations"] / table["whatsapp_orders"].replace(0, np.nan)
+
+    if len(table) >= 2 and table["amount_spent_inr"].std() > 0 and table["whatsapp_orders"].std() > 0:
+        correlation = float(np.corrcoef(table["amount_spent_inr"], table["whatsapp_orders"])[0, 1])
+    else:
+        correlation = np.nan
+    return table[columns], correlation

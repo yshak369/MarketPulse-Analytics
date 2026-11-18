@@ -13,6 +13,7 @@ How to run (from the project folder):
 
 import unittest
 
+import numpy as np
 import pandas as pd
 
 import clean_data
@@ -254,6 +255,87 @@ class ShippingTest(unittest.TestCase):
         tables = clean(no_shipments)
         self.assertTrue(eda.delivery_outcomes(tables["shipments"], tables["orders"]).empty)
         self.assertTrue(eda.delivery_days_by_courier(tables["shipments"], tables["orders"]).empty)
+
+
+def make_ad_tables():
+    """Two fake campaigns over two weeks, cleaned: one messaging, one link-click.
+
+    Week 2025-02-24 (Mon 24 Feb - Sun 2 Mar): campaign A spends 100+200,
+    gets 10+15 messaging conversations. Campaign B spends 50, 1 link click.
+    Week 2025-03-03: campaign A spends 300, 20 conversations.
+    """
+    tables = make_tables()
+    tables["ad_campaigns"] = pd.DataFrame({
+        "campaign_id": ["A", "B"], "campaign_name": ["Campaign A", "Campaign B"],
+        "delivery_status": ["active", "active"], "attribution_setting": ["7-day click", None],
+        "budget_amount": [500.0, 200.0], "budget_type": ["daily", "daily"],
+        "end_date": pd.to_datetime([None, None])})
+    tables["ad_performance"] = pd.DataFrame({
+        "campaign_id": ["A", "A", "B", "A"],
+        "report_date": pd.to_datetime(["2025-02-24", "2025-02-25", "2025-02-26", "2025-03-03"]),
+        "amount_spent_inr": [100.0, 200.0, 50.0, 300.0],
+        "impressions": [2000, 3000, 1000, 4000], "reach": [1800, 2700, 900, 3600],
+        "link_clicks": [30, 40, 20, 50], "clicks_all": [40, 60, 25, 70],
+        "landing_page_views": [np.nan, np.nan, 15, np.nan], "results": [10, 15, 1, 20],
+        "result_indicator": ["actions:onsite_conversion.messaging_conversation_started_7d"] * 2
+                           + ["actions:link_click"] + ["actions:onsite_conversion.messaging_conversation_started_7d"]})
+    return clean_data.clean_all(tables)
+
+
+class MarketingTest(unittest.TestCase):
+    def test_spend_by_week(self):
+        table = eda.spend_by_week(make_ad_tables()["ad_performance"])
+        self.assertEqual(table.to_dict("records"), [
+            {"week_start": pd.Timestamp("2025-02-24"), "amount_spent_inr": 350.0},
+            {"week_start": pd.Timestamp("2025-03-03"), "amount_spent_inr": 300.0}])
+
+    def test_cost_per_conversation_excludes_link_clicks(self):
+        table = eda.cost_per_conversation(make_ad_tables()["ad_performance"]).set_index("campaign_id")
+        self.assertEqual((table.loc["A", "conversations"], table.loc["A", "amount_spent_inr"]), (45, 600.0))
+        self.assertNotIn("B", table.index)   # B has only a link_click result
+
+    def test_weekly_cpm_and_ctr(self):
+        table = eda.weekly_cpm_and_ctr(make_ad_tables()["ad_performance"])
+        row = table[(table["campaign_id"] == "A") & (table["week_start"] == pd.Timestamp("2025-02-24"))].iloc[0]
+        # spend 300, impressions 5000: cpm = 300/5000*1000 = 60. clicks_all 100/5000 = 0.02
+        self.assertAlmostEqual(row["cpm"], 60.0)
+        self.assertAlmostEqual(row["ctr"], 0.02)
+
+    def test_zero_impressions_gives_empty_ratios_not_an_error(self):
+        tables = make_ad_tables()
+        ads = tables["ad_performance"].copy()
+        ads.loc[ads["campaign_id"] == "B", "impressions"] = 0   # B's only row, so its week totals 0
+        table = eda.weekly_cpm_and_ctr(ads)
+        b_row = table[table["campaign_id"] == "B"].iloc[0]
+        a_row = table[(table["campaign_id"] == "A") & (table["week_start"] == pd.Timestamp("2025-02-24"))].iloc[0]
+        self.assertTrue(pd.isna(b_row["cpm"]) and pd.isna(b_row["ctr"]))
+        self.assertFalse(pd.isna(a_row["cpm"]))   # campaign A's week is unaffected by B's zero
+
+    def test_spend_and_orders_by_week_and_correlation(self):
+        tables = make_ad_tables()
+        table, correlation = eda.spend_and_orders_by_week(tables["ad_performance"], tables["orders"])
+        self.assertEqual(list(table["week_start"]), [pd.Timestamp("2025-02-24"), pd.Timestamp("2025-03-03")])
+        # W-1 and W-2 fall in the 24 Feb week (1,2 March), S-1 (shopify) is ignored
+        first = table.iloc[0]
+        self.assertEqual((first["amount_spent_inr"], first["messaging_conversations"], first["whatsapp_orders"]),
+                         (350.0, 25, 2))
+        self.assertTrue(pd.isna(correlation) or isinstance(correlation, float))
+
+    def test_correlation_is_nan_with_too_few_weeks(self):
+        tables = make_ad_tables()
+        ads = tables["ad_performance"][tables["ad_performance"]["week_start"] == pd.Timestamp("2025-02-24")]
+        _table, correlation = eda.spend_and_orders_by_week(ads, tables["orders"])
+        self.assertTrue(pd.isna(correlation))
+
+    def test_no_ad_data_yet(self):
+        tables = clean()   # make_tables() without any ad rows replaced
+        empty_ads = tables["ad_performance"].iloc[0:0]
+        self.assertTrue(eda.spend_by_week(empty_ads).empty)
+        self.assertTrue(eda.cost_per_conversation(empty_ads).empty)
+        self.assertTrue(eda.weekly_cpm_and_ctr(empty_ads).empty)
+        table, correlation = eda.spend_and_orders_by_week(empty_ads, tables["orders"])
+        self.assertTrue(table.empty)
+        self.assertTrue(pd.isna(correlation))
 
 
 class EmptyDataTest(unittest.TestCase):
