@@ -289,6 +289,20 @@ The method, and known traps when reading it, are explained in `eda.md`. The cons
 
 A section may say "No advertising data yet" or "No courier delivery records yet" until you run the Meta Ads and Shopify imports (sections 4.2 and 4.3) and add courier records to the `shipments` table.
 
+## 5c. SQL business analysis
+
+Five files answer the same business questions directly in SQL, reading only the `clean` schema. They are explained question by question in `sql_analysis.md`.
+
+```
+psql -U marketpulse_user -d marketpulse_private -h localhost -f sql/08_sales_analysis.sql
+psql -U marketpulse_user -d marketpulse_private -h localhost -f sql/09_customer_analysis.sql
+psql -U marketpulse_user -d marketpulse_private -h localhost -f sql/10_profitability_analysis.sql
+psql -U marketpulse_user -d marketpulse_private -h localhost -f sql/11_payment_and_shipping_analysis.sql
+psql -U marketpulse_user -d marketpulse_private -h localhost -f sql/12_marketing_analysis.sql
+```
+
+**Unlike the Python scripts, these print real result rows to your terminal** — order values, districts, ad spend (never a name, phone or address: the `clean` schema holds none). That is normal and expected: it is exactly like looking at the numbers in pgAdmin. **Do not** paste that output here, and do not redirect it into a file inside the project.
+
 ## 6. If something goes wrong
 
 | Message | Meaning | What to do |

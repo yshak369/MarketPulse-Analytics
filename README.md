@@ -4,7 +4,7 @@ An end-to-end e-commerce sales and marketing analytics portfolio project.
 
 It analyses sales, advertising, customer behaviour, product performance and profitability, using SQL, Python, Pandas, NumPy, PostgreSQL and Power BI.
 
-> Status: Phases 1 to 4 complete (project structure, database schema, data importing, data cleaning, exploratory data analysis). Phase 5 (SQL business analysis) not started.
+> Status: Phases 1 to 5 complete (project structure, database schema, data importing, data cleaning, exploratory data analysis, SQL business analysis). Phase 6 (Power BI dashboard) not started.
 
 **[Read the synthetic exploratory data analysis report](reports/eda_synthetic/eda_report.md)** — sales, customer, payment and marketing questions answered from the clean, fully synthetic data.
 
@@ -12,8 +12,8 @@ It analyses sales, advertising, customer behaviour, product performance and prof
 
 ```
 WhatsApp chats ─► parse_whatsapp_orders.py ─┐
-Shopify export ─► prepare_shopify_orders.py ─┼─► PostgreSQL raw tables ─► audit + clean_data.py ─► "clean" schema ─► eda.py ─► SQL, Power BI
-Meta Ads export ─► prepare_meta_ads.py ──────┘     (sql/01 to 06)          (Python, Pandas)        (sql/07)           report
+Shopify export ─► prepare_shopify_orders.py ─┼─► PostgreSQL raw tables ─► audit + clean_data.py ─► "clean" schema ─┬─► eda.py (Python report)
+Meta Ads export ─► prepare_meta_ads.py ──────┘     (sql/01 to 06)          (Python, Pandas)        (sql/07)        └─► sql/08-12 (SQL analysis) ─► Power BI
 ```
 
 The public version of this project uses **synthetic (fake) data** in exactly the same tables. See `docs/synthetic_data_plan.md`.
@@ -28,9 +28,10 @@ python -m unittest discover -s python
 python python/audit_data_quality.py --database marketpulse_synthetic --period-start 2025-01-01 --period-end 2025-12-31
 python python/clean_data.py --database marketpulse_synthetic
 python python/eda.py --database marketpulse_synthetic --output reports/eda_synthetic
+psql -U marketpulse_user -d marketpulse_synthetic -h localhost -f sql/08_sales_analysis.sql
 ```
 
-The cleaning rules, and why each one exists, are explained in `docs/data_cleaning.md`. The exploratory analysis method and its known traps are explained in `docs/eda.md`.
+The cleaning rules, and why each one exists, are explained in `docs/data_cleaning.md`. The exploratory analysis method and its known traps are explained in `docs/eda.md`. The five SQL analysis files (`sql/08`–`12`) are explained, question by question, in `docs/sql_analysis.md`.
 
 ## Modules
 
