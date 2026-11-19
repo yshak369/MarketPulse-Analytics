@@ -19,3 +19,6 @@ venv/
 # OS junk files
 .DS_Store
 Thumbs.db
+
+# Power BI reports built on the PRIVATE database (they contain real business figures)
+dashboards/*private*

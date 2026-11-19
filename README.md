@@ -4,9 +4,25 @@ An end-to-end e-commerce sales and marketing analytics portfolio project.
 
 It analyses sales, advertising, customer behaviour, product performance and profitability, using SQL, Python, Pandas, NumPy, PostgreSQL and Power BI.
 
-> Status: Phases 1 to 5 complete (project structure, database schema, data importing, data cleaning, exploratory data analysis, SQL business analysis). Phase 6 (Power BI dashboard) not started.
+> Status: Phases 1 to 5 complete (project structure, database schema, data importing, data cleaning, exploratory data analysis, SQL business analysis). Phase 6 (Power BI dashboard) is built and checked on the synthetic data; the version on the private data is not done yet.
 
 **[Read the synthetic exploratory data analysis report](reports/eda_synthetic/eda_report.md)** — sales, customer, payment and marketing questions answered from the clean, fully synthetic data.
+
+## Power BI dashboard
+
+**[Read how the dashboard is built and checked](docs/power_bi_dashboard.md)**. Five pages on the synthetic data; every number was checked against the SQL and Python results. The report file is `dashboards/marketpulse_synthetic.pbix`.
+
+![Overview page](dashboards/01_overview.png)
+
+| Sales | Payment & Shipping |
+|---|---|
+| ![Sales page](dashboards/02_sales.png) | ![Payment and shipping page](dashboards/03_payment_shipping.png) |
+
+| Marketing | Customers |
+|---|---|
+| ![Marketing page](dashboards/04_marketing.png) | ![Customers page](dashboards/05_customers.png) |
+
+All figures are synthetic (fake), not real business results.
 
 ## How the data flows
 
