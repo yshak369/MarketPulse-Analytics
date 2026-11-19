@@ -20,7 +20,7 @@ This file reads the results already published in `docs/eda.md`, `docs/sql_analys
 
 ## 2. Marketing Analytics
 
-**Finding.** Cost per messaging conversation ranged Rs 15.31–16.02 across campaigns before the Power BI fix, and Rs 15.70 after correctly excluding the two Instagram-boost campaigns that spent money but started no conversations (M2; `docs/power_bi_dashboard.md`, section 7). Weekly ad spend and weekly WhatsApp orders move together, correlation 0.86 (M4–M6).
+**Finding.** Cost per messaging conversation ranges from Rs 15.31 to Rs 16.02 across the 5 conversation campaigns, and is Rs 15.70 overall (M2; `docs/sql_analysis.md`, `docs/power_bi_dashboard.md`). The first Power BI version showed Rs 16.17 overall, because it divided all ad spend, including the two Instagram-boost campaigns that started no conversations, by the conversation count (`docs/power_bi_dashboard.md`, section 7). Weekly ad spend and weekly WhatsApp orders move together, correlation 0.86 (M4–M6).
 
 **Caveat.** This correlation is a demonstration, not a discovery — the generator deliberately links weekly spend to weekly order volume (`docs/eda.md`, section 5). On real data, a similar number would still only show a pattern: nothing in this schema links one ad to one order, so it is never proof that spend caused those orders.
 
@@ -36,9 +36,9 @@ This file reads the results already published in `docs/eda.md`, `docs/sql_analys
 
 ## 4. Profitability Analytics
 
-**Finding.** Every product shows exactly a 60% Prepaid gross margin (P1). Estimated gross profit across all 8 products is roughly Rs 1,241,030 (P2). Weekly estimated gross profit minus ad spend is positive across the measured weeks (P3).
+**Finding.** Every product shows exactly a 60% Prepaid gross margin (P1). Estimated gross profit across all 8 products is Rs 1,241,030 — Rs 1,969,050 estimated revenue minus Rs 731,100 estimated cost (P2). After subtracting each week's ad spend, all 53 weeks stay positive: the lowest week is Rs 4,558.41, and the year totals Rs 815,002.04 (P3; `sql/10_profitability_analysis.sql`).
 
-**Caveat.** The uniform 60% margin is not a finding — the synthetic generator sets every product's cost at exactly 40% of its Prepaid price, so a perfectly flat number across every product is guaranteed by construction (`docs/sql_analysis.md`, section 6). COD margins vary more (64–70%) only because COD prices were not set as a fixed markup — also an artifact of how the data was built, not a business pattern.
+**Caveat.** The uniform 60% margin is not a finding — the synthetic generator sets every product's cost at exactly 40% of its Prepaid price, so a perfectly flat number across every product is guaranteed by construction (`docs/sql_analysis.md`, section 6). COD margins vary more (64–70%) only because COD prices were not set as a fixed markup — also an artifact of how the data was built, not a business pattern. The same built-in margin is why no P3 week goes negative: with 60% or more kept on every sale, ad spend would have to be very high to push a week below zero. P3 also leaves out shipping and returns, so it is not profit in the full sense (that is P5).
 
 **If this held in real data:** a genuinely flat margin across every product would be unusual enough to double-check the cost data itself before trusting it; real product costs rarely land on an identical ratio by coincidence. P2 and P3 both depend on estimated, not recorded, costs and values — a real decision about which products to push would need at least the recorded Prepaid revenue, not the estimate alone.
 
@@ -46,9 +46,9 @@ This file reads the results already published in `docs/eda.md`, `docs/sql_analys
 
 ## 5. Payment and Shipping Analytics
 
-**Finding.** 58.75–59% of orders with a known payment type are COD (D1). Delhivery (COD) delivers 86.74% of shipments; Speed Post (Prepaid) delivers a higher share still (D5, D6; `docs/power_bi_dashboard.md`). COD amount to collect runs to real money per week, but it is a collectible amount, not confirmed revenue (D4).
+**Finding.** 59% of orders with a known payment type are COD (D1; 58.75% unrounded, `docs/power_bi_dashboard.md`). Delhivery (COD) delivers 80% of its parcels and Speed Post (Prepaid) 97%; across both couriers, 86.74% of shipments are delivered (D5; `docs/eda.md`, `docs/power_bi_dashboard.md`). Delhivery's median delivery time is 4 days and Speed Post's is 5 (D6). The COD amount to collect is tracked week by week (D4), but it is an amount still to be collected, not confirmed revenue.
 
-**Caveat.** D4's figure must never be read as revenue — a COD parcel can be marked delivered by the courier and still be refused or returned unpaid at the door, a case this schema does not yet capture (P4).
+**Caveat.** D4's figure must never be read as revenue — a COD parcel can be refused at the door or returned, and then nothing is collected. The cost of those returns is not in this schema yet (P4).
 
 **If this held in real data:** a meaningfully lower delivery rate on COD versus Prepaid would be worth investigating by district (D2) before assuming it's a courier-wide issue — in this synthetic data, some states lean more COD than others, and a courier's performance in one region is not necessarily its performance everywhere.
 
@@ -64,4 +64,6 @@ Even then, every caveat above still applies: an estimate stays labelled as an es
 
 ## 7. How this file was checked
 
-Every figure in this file is copied from an already-published, already-tested result (`docs/eda.md`, `docs/sql_analysis.md`, `docs/power_bi_dashboard.md`), not recomputed here. Nothing in this file touches the database.
+Every figure was checked against its published source (`docs/eda.md`, `docs/sql_analysis.md`, `docs/power_bi_dashboard.md`). The P2 revenue/cost split and the P3 weekly figures had not been written down anywhere before, so they come from running the existing `sql/10_profitability_analysis.sql` logic on `marketpulse_synthetic` (read-only).
+
+The first version of this file had three mistakes, found by re-checking each number against its source before publishing: it gave the all-courier delivery share (86.74%) as Delhivery's, mixed up the per-campaign cost-per-conversation range with the overall figure, and stated P3's result without having run the query.
