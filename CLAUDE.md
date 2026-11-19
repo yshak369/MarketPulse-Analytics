@@ -6,24 +6,6 @@ MarketPulse Analytics is an end-to-end e-commerce sales and marketing intelligen
 
 Its purpose is to analyse sales, advertising, customer behaviour, product performance and business profitability.
 
-## My Career Goal
-
-I am a 2025 B.Tech Computer Science graduate.
-
-My immediate priority is getting an entry-level Data Analyst job as quickly as realistically possible.
-
-I want this project to demonstrate practical, job-ready skills in:
-
-- SQL
-- Python
-- Pandas
-- NumPy
-- PostgreSQL
-- Excel
-- Power BI
-- Business Analytics
-- Data Visualisation
-
 ## My Background
 
 I operate an e-commerce skincare business.
@@ -131,16 +113,6 @@ Phase 8: Documentation and GitHub publication.
 
 Phase 9: Optional API integration and deployment.
 
-## Important Project Separation
-
-MarketPulse Analytics is an independent portfolio project.
-
-CreamOS is a separate personal project.
-
-SalesPilot AI is another independent project.
-
-Never combine these projects or modify their folders while working on MarketPulse.
-
 ## Working Agreement
 
 Before changing files, inspect the existing project.
@@ -153,4 +125,4 @@ Show me how to test them.
 
 Do not move forward until I understand and approve the result.
 
-My goal is to understand and confidently explain this project in job interviews.
+Personal instructions that are not published live in CLAUDE.local.md (ignored by Git).

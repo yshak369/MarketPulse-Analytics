@@ -13,8 +13,9 @@ __pycache__/
 venv/
 .venv/
 
-# Personal tool settings
+# Personal tool settings and personal instructions
 .claude/settings.local.json
+CLAUDE.local.md
 
 # OS junk files
 .DS_Store
